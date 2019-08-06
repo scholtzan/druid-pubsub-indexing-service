@@ -1,361 +1,378 @@
 package org.apache.druid.indexing.pubsub.supervisor;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
+import com.google.common.base.Optional;
+import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.collect.Iterables;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningScheduledExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+import org.apache.druid.indexer.TaskLocation;
+import org.apache.druid.indexer.TaskStatus;
+import org.apache.druid.indexing.common.IndexTaskClient;
+import org.apache.druid.indexing.common.TaskInfoProvider;
 import org.apache.druid.indexing.common.stats.RowIngestionMetersFactory;
-import org.apache.druid.indexing.common.task.Task;
+import org.apache.druid.indexing.common.task.HadoopIndexTask;
 import org.apache.druid.indexing.common.task.TaskResource;
-import org.apache.druid.indexing.overlord.DataSourceMetadata;
-import org.apache.druid.indexing.overlord.IndexerMetadataStorageCoordinator;
-import org.apache.druid.indexing.overlord.TaskMaster;
-import org.apache.druid.indexing.overlord.TaskStorage;
+import org.apache.druid.indexing.overlord.*;
+import org.apache.druid.indexing.overlord.supervisor.Supervisor;
+import org.apache.druid.indexing.overlord.supervisor.SupervisorReport;
 import org.apache.druid.indexing.pubsub.*;
-import org.apache.druid.indexing.seekablestream.SeekableStreamEndSequenceNumbers;
-import org.apache.druid.indexing.seekablestream.SeekableStreamIndexTask;
-import org.apache.druid.indexing.seekablestream.SeekableStreamIndexTaskIOConfig;
-import org.apache.druid.indexing.seekablestream.SeekableStreamIndexTaskTuningConfig;
-import org.apache.druid.indexing.seekablestream.SeekableStreamStartSequenceNumbers;
-import org.apache.druid.indexing.seekablestream.common.OrderedSequenceNumber;
-import org.apache.druid.indexing.seekablestream.common.RecordSupplier;
-import org.apache.druid.indexing.seekablestream.common.StreamPartition;
-import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisor;
+import org.apache.druid.indexing.seekablestream.*;
 import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorIOConfig;
-import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorReportPayload;
 import org.apache.druid.indexing.seekablestream.utils.RandomIdUtils;
-import org.apache.druid.java.util.common.ISE;
-import org.apache.druid.java.util.common.StringUtils;
+import org.apache.druid.java.util.common.*;
+import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.java.util.emitter.EmittingLogger;
-import org.apache.druid.java.util.emitter.service.ServiceEmitter;
-import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
-import org.apache.druid.server.metrics.DruidMonitorSchedulerConfig;
+import org.apache.druid.metadata.EntryExistsException;
+import org.apache.druid.metadata.MetadataSupervisorManager;
+import org.apache.druid.timeline.DataSegment;
+import org.jcodings.util.Hash;
 import org.joda.time.DateTime;
+import org.joda.time.Duration;
+import org.joda.time.Interval;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.TreeMap;
-import java.util.concurrent.ScheduledExecutorService;
+import javax.annotation.Nullable;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
+
+import static javax.xml.crypto.dsig.SignatureProperties.TYPE;
 
 
-public class PubSubSupervisor extends SeekableStreamSupervisor<Integer, Long> {
-    public static final TypeReference<TreeMap<Integer, Map<Integer, Long>>> CHECKPOINTS_TYPE_REF =
-            new TypeReference<TreeMap<Integer, Map<Integer, Long>>>()
-            {
-            };
-
+public class PubSubSupervisor implements Supervisor {
+    private static final String TASK_PREFIX = "index_pubsub";
     private static final EmittingLogger log = new EmittingLogger(PubSubSupervisor.class);
     private static final long MINIMUM_GET_OFFSET_PERIOD_MILLIS = 5000;
     private static final long INITIAL_GET_OFFSET_DELAY_MILLIS = 15000;
+    private static final long MINIMUM_FUTURE_TIMEOUT_IN_SECONDS = 120;
+    private static final Interval ALL_INTERVAL = Intervals.of("0000-01-01/3000-01-01");
+    private static final int DEFAULT_MAX_TASK_COUNT = 1;
     private static final long INITIAL_EMIT_LAG_METRIC_DELAY_MILLIS = 25000;
     private static final Long NOT_SET = -1L;
     private static final Long END_OF_PARTITION = Long.MAX_VALUE;
+    private static final long MAX_RUN_FREQUENCY_MILLIS = 1000;
+    private static final int MAX_INITIALIZATION_RETRIES = 20;
 
-    private final ServiceEmitter emitter;
-    private final DruidMonitorSchedulerConfig monitorSchedulerConfig;
-    private volatile Map<Integer, Long> latestSequenceFromStream;
+    final IndexerMetadataStorageCoordinator metadataStorageCoordinator;
+    final PubSubIndexTaskClientFactory taskClientFactory;
+    final PubSubIndexTaskClient taskClient;
+    private final RowIngestionMetersFactory rowIngestionMetersFactory;
+    final TaskStorage taskStorage;
+    final TaskMaster taskMaster;
+    private final String supervisorId;
+    private final TaskInfoProvider taskInfoProvider;
+    private final PubSubSupervisorIOConfig ioConfig;
+    private final PubSubSupervisorTuningConfig tuningConfig;
+    private final String dataSource;
+    private final Object stopLock = new Object();
+    private final Object stateChangeLock = new Object();
+    private final Object recordSupplierLock = new Object();
+    private final long futureTimeoutInSeconds; // how long to wait for async operations to complete
+    private ListeningScheduledExecutorService exec = null;
+    private ListenableFuture<?> future = null;
+    private final Object taskLock = new Object();
+    private final PubSubIndexTaskIOConfig taskConfig;
+    private final Map<Interval, PubSubIndexTask> runningTasks = new HashMap<>();
+    private final Map<Interval, String> runningVersion = new HashMap<>();
+    private final int maxTaskCount;
 
-
+    private boolean listenerRegistered = false;
+    private long lastRunTime;
+    private int initRetryCounter = 0;
+    private volatile DateTime firstRunTime;
     private final PubSubSupervisorSpec spec;
+    private volatile PubSubMessageSupplier supplier;
+    private volatile boolean started = false;
+    private volatile boolean stopped = false;
+    private volatile boolean lifecycleStarted = false;
+
 
     public PubSubSupervisor(
+            final String supervisorId,
             final TaskStorage taskStorage,
             final TaskMaster taskMaster,
-            final IndexerMetadataStorageCoordinator indexerMetadataStorageCoordinator,
+            final IndexerMetadataStorageCoordinator metadataStorageCoordinator,
             final PubSubIndexTaskClientFactory taskClientFactory,
             final ObjectMapper mapper,
             final PubSubSupervisorSpec spec,
-            final RowIngestionMetersFactory rowIngestionMetersFactory
-    )
-    {
-        super(
-                StringUtils.format("PubSubSupervisor-%s", spec.getDataSchema().getDataSource()),
-                taskStorage,
-                taskMaster,
-                indexerMetadataStorageCoordinator,
-                taskClientFactory,
-                mapper,
-                spec,
-                rowIngestionMetersFactory,
-                false
-        );
-
+            final RowIngestionMetersFactory rowIngestionMetersFactory,
+            final PubSubIndexTaskIOConfig taskConfig
+    ) {
+        this.supervisorId = supervisorId;
         this.spec = spec;
-        this.emitter = spec.getEmitter();
-        this.monitorSchedulerConfig = spec.getMonitorSchedulerConfig();
-    }
+        this.taskStorage = taskStorage;
+        this.taskMaster = taskMaster;
+        this.metadataStorageCoordinator = metadataStorageCoordinator;
+        this.rowIngestionMetersFactory = rowIngestionMetersFactory;
+        this.taskClientFactory = taskClientFactory;
+        this.ioConfig = spec.getIoConfig();
+        this.tuningConfig = spec.getTuningConfig();
+        this.dataSource = spec.getDataSchema().getDataSource();
+        this.taskConfig = taskConfig;
+        this.maxTaskCount = spec.getContext().containsKey("maxTaskCount")
+                ? Integer.parseInt(String.valueOf(spec.getContext().get("maxTaskCount")))
+                : DEFAULT_MAX_TASK_COUNT;
 
-
-    @Override
-    protected RecordSupplier<Integer, Long> setupRecordSupplier()
-    {
-        return new PubSubRecordSupplier(spec.getIoConfig().getConsumerProperties(), sortingMapper);
-    }
-
-    @Override
-    protected void scheduleReporting(ScheduledExecutorService reportingExec)
-    {
-        PubSubSupervisorIOConfig ioConfig = spec.getIoConfig();
-        PubSubSupervisorTuningConfig tuningConfig = spec.getTuningConfig();
-        reportingExec.scheduleAtFixedRate(
-                updateCurrentAndLatestOffsets(),
-                ioConfig.getStartDelay().getMillis() + INITIAL_GET_OFFSET_DELAY_MILLIS, // wait for tasks to start up
-                Math.max(
-                        tuningConfig.getOffsetFetchPeriod().getMillis(), MINIMUM_GET_OFFSET_PERIOD_MILLIS
-                ),
-                TimeUnit.MILLISECONDS
-        );
-
-        reportingExec.scheduleAtFixedRate(
-                emitLag(),
-                ioConfig.getStartDelay().getMillis() + INITIAL_EMIT_LAG_METRIC_DELAY_MILLIS, // wait for tasks to start up
-                monitorSchedulerConfig.getEmitterPeriod().getMillis(),
-                TimeUnit.MILLISECONDS
-        );
-    }
-
-
-    @Override
-    protected int getTaskGroupIdForPartition(Integer partition)
-    {
-        return partition % spec.getIoConfig().getTaskCount();
-    }
-
-    @Override
-    protected boolean checkSourceMetadataMatch(DataSourceMetadata metadata)
-    {
-        return metadata instanceof PubSubDataSourceMetadata;
-    }
-
-    @Override
-    protected boolean doesTaskTypeMatchSupervisor(Task task)
-    {
-        return task instanceof PubSubIndexTask;
-    }
-
-    @Override
-    protected SeekableStreamSupervisorReportPayload<Integer, Long> createReportPayload(
-            int numPartitions,
-            boolean includeOffsets
-    )
-    {
-        PubSubSupervisorIOConfig ioConfig = spec.getIoConfig();
-        Map<Integer, Long> partitionLag = getLagPerPartition(getHighestCurrentOffsets());
-        return new PubSubSupervisorReportPayload(
-                spec.getDataSchema().getDataSource(),
-                ioConfig.getTopic(),
-                numPartitions,
-                ioConfig.getReplicas(),
-                ioConfig.getTaskDuration().getMillis() / 1000,
-                includeOffsets ? latestSequenceFromStream : null,
-                includeOffsets ? partitionLag : null,
-                includeOffsets ? partitionLag.values().stream().mapToLong(x -> Math.max(x, 0)).sum() : null,
-                includeOffsets ? sequenceLastUpdated : null,
-                spec.isSuspended(),
-                stateManager.isHealthy(),
-                stateManager.getSupervisorState().getBasicState(),
-                stateManager.getSupervisorState(),
-                stateManager.getExceptionEvents()
-        );
-    }
-
-
-    @Override
-    protected SeekableStreamIndexTaskIOConfig createTaskIoConfig(
-            int groupId,
-            Map<Integer, Long> startPartitions,
-            Map<Integer, Long> endPartitions,
-            String baseSequenceName,
-            DateTime minimumMessageTime,
-            DateTime maximumMessageTime,
-            Set<Integer> exclusiveStartSequenceNumberPartitions,
-            SeekableStreamSupervisorIOConfig ioConfig
-    )
-    {
-        PubSubSupervisorIOConfig pubSubIoConfig = (PubSubSupervisorIOConfig) ioConfig;
-        return new PubSubIndexTaskIOConfig(
-                groupId,
-                baseSequenceName,
-                new SeekableStreamStartSequenceNumbers<>(pubSubIoConfig.getTopic(), startPartitions, Collections.emptySet()),
-                new SeekableStreamEndSequenceNumbers<>(pubSubIoConfig.getTopic(), endPartitions),
-                pubSubIoConfig.getConsumerProperties(),
-                pubSubIoConfig.getPollTimeout(),
-                true,
-                minimumMessageTime,
-                maximumMessageTime
-        );
-    }
-
-    @Override
-    protected List<SeekableStreamIndexTask<Integer, Long>> createIndexTasks(
-            int replicas,
-            String baseSequenceName,
-            ObjectMapper sortingMapper,
-            TreeMap<Integer, Map<Integer, Long>> sequenceOffsets,
-            SeekableStreamIndexTaskIOConfig taskIoConfig,
-            SeekableStreamIndexTaskTuningConfig taskTuningConfig,
-            RowIngestionMetersFactory rowIngestionMetersFactory
-    ) throws JsonProcessingException
-    {
-        final String checkpoints = sortingMapper.writerFor(CHECKPOINTS_TYPE_REF).writeValueAsString(sequenceOffsets);
-        final Map<String, Object> context = createBaseTaskContexts();
-        context.put(CHECKPOINTS_CTX_KEY, checkpoints);
-        // Kafka index task always uses incremental handoff since 0.16.0.
-        // The below is for the compatibility when you want to downgrade your cluster to something earlier than 0.16.0.
-        // Kafka index task will pick up LegacyKafkaIndexTaskRunner without the below configuration.
-        context.put("IS_INCREMENTAL_HANDOFF_SUPPORTED", true);
-
-        List<SeekableStreamIndexTask<Integer, Long>> taskList = new ArrayList<>();
-        for (int i = 0; i < replicas; i++) {
-            String taskId = Joiner.on("_").join(baseSequenceName, RandomIdUtils.getRandomId());
-            taskList.add(new PubSubIndexTask(
-                    taskId,
-                    new TaskResource(baseSequenceName, 1),
-                    spec.getDataSchema(),
-                    (PubSubIndexTaskTuningConfig) taskTuningConfig,
-                    (PubSubIndexTaskIOConfig) taskIoConfig,
-                    context,
-                    null,
-                    null,
-                    rowIngestionMetersFactory,
-                    sortingMapper
-            ));
-        }
-        return taskList;
-    }
-
-
-    @Override
-    // suppress use of CollectionUtils.mapValues() since the valueMapper function is dependent on map key here
-    @SuppressWarnings("SSBasedInspection")
-    protected Map<Integer, Long> getLagPerPartition(Map<Integer, Long> currentOffsets)
-    {
-        return currentOffsets
-                .entrySet()
-                .stream()
-                .collect(
-                        Collectors.toMap(
-                                Entry::getKey,
-                                e -> latestSequenceFromStream != null
-                                        && latestSequenceFromStream.get(e.getKey()) != null
-                                        && e.getValue() != null
-                                        ? latestSequenceFromStream.get(e.getKey()) - e.getValue()
-                                        : Integer.MIN_VALUE
-                        )
-                );
-    }
-
-    @Override
-    protected PubSubDataSourceMetadata createDataSourceMetaDataForReset(String topic, Map<Integer, Long> map)
-    {
-        return new PubSubDataSourceMetadata(new SeekableStreamStartSequenceNumbers<>(topic, map, Collections.emptySet()));
-    }
-
-    @Override
-    protected OrderedSequenceNumber<Long> makeSequenceNumber(Long seq, boolean isExclusive)
-    {
-        return PubSubSequenceNumber.of(seq);
-    }
-
-    private Runnable emitLag()
-    {
-        return () -> {
-            try {
-                Map<Integer, Long> highestCurrentOffsets = getHighestCurrentOffsets();
-                String dataSource = spec.getDataSchema().getDataSource();
-
-                if (latestSequenceFromStream == null) {
-                    throw new ISE("Latest offsets from PubSub have not been fetched");
-                }
-
-                if (!latestSequenceFromStream.keySet().equals(highestCurrentOffsets.keySet())) {
-                    log.warn(
-                            "Lag metric: PubSub partitions %s do not match task partitions %s",
-                            latestSequenceFromStream.keySet(),
-                            highestCurrentOffsets.keySet()
+        this.taskInfoProvider = new TaskInfoProvider()
+        {
+            @Override
+            public TaskLocation getTaskLocation(final String id)
+            {
+                Preconditions.checkNotNull(id, "id");
+                Optional<TaskRunner> taskRunner = taskMaster.getTaskRunner();
+                if (taskRunner.isPresent()) {
+                    Optional<? extends TaskRunnerWorkItem> item = Iterables.tryFind(
+                            taskRunner.get().getRunningTasks(),
+                            (Predicate<TaskRunnerWorkItem>) taskRunnerWorkItem -> id.equals(taskRunnerWorkItem.getTaskId())
                     );
-                }
 
-                Map<Integer, Long> partitionLags = getLagPerPartition(highestCurrentOffsets);
-                long maxLag = 0, totalLag = 0, avgLag;
-                for (long lag : partitionLags.values()) {
-                    if (lag > maxLag) {
-                        maxLag = lag;
+                    if (item.isPresent()) {
+                        return item.get().getLocation();
                     }
-                    totalLag += lag;
+                } else {
+                    log.error("Failed to get task runner because I'm not the leader!");
                 }
-                avgLag = partitionLags.size() == 0 ? 0 : totalLag / partitionLags.size();
 
-                emitter.emit(
-                        ServiceMetricEvent.builder().setDimension("dataSource", dataSource).build("ingest/pubsub/lag", totalLag)
-                );
-                emitter.emit(
-                        ServiceMetricEvent.builder().setDimension("dataSource", dataSource).build("ingest/pubsub/maxLag", maxLag)
-                );
-                emitter.emit(
-                        ServiceMetricEvent.builder().setDimension("dataSource", dataSource).build("ingest/pubsub/avgLag", avgLag)
-                );
+                return TaskLocation.unknown();
             }
-            catch (Exception e) {
-                log.warn(e, "Unable to compute PubSub lag");
+
+            @Override
+            public Optional<TaskStatus> getTaskStatus(String id)
+            {
+                return taskStorage.getStatus(id);
             }
         };
+
+        this.futureTimeoutInSeconds = Math.max(
+                MINIMUM_FUTURE_TIMEOUT_IN_SECONDS,
+                tuningConfig.getChatRetries() * (tuningConfig.getHttpTimeout().getStandardSeconds()
+                        + IndexTaskClient.MAX_RETRY_WAIT_SECONDS)
+        );
+
+        int chatThreads = (this.tuningConfig.getChatThreads() != null
+                ? this.tuningConfig.getChatThreads()
+                : Math.min(10, this.ioConfig.getTaskCount() * this.ioConfig.getReplicas()));
+        this.taskClient = taskClientFactory.build(
+                taskInfoProvider,
+                dataSource,
+                chatThreads,
+                this.tuningConfig.getHttpTimeout(),
+                this.tuningConfig.getChatRetries()
+        );
+        log.info(
+                "Created taskClient with dataSource[%s] chatThreads[%d] httpTimeout[%s] chatRetries[%d]",
+                dataSource,
+                chatThreads,
+                this.tuningConfig.getHttpTimeout(),
+                this.tuningConfig.getChatRetries()
+        );
+    }
+
+
+    protected PubSubMessageSupplier setupMessageSupplier() {
+        return new PubSubMessageSupplier(
+                ioConfig.getProjectId(),
+                ioConfig.getSubscriptionId(),
+                ioConfig.getMaxMessagesPerPoll(),
+                ioConfig.getMaxMessageSizePerPoll(),
+                ioConfig.getKeepAliveTime(),
+                ioConfig.getKeepAliveTimeout()
+        );
     }
 
     @Override
-    protected Long getNotSetMarker()
+    public void start()
     {
-        return NOT_SET;
+        synchronized (stateChangeLock) {
+            Preconditions.checkState(!lifecycleStarted, "already started");
+            Preconditions.checkState(!exec.isShutdown(), "already stopped");
+
+            exec = MoreExecutors.listeningDecorator(Execs.scheduledSingleThreaded(supervisorId));
+            final Duration delay = taskConfig.getTaskCheckDuration();
+            future = exec.scheduleWithFixedDelay(
+                    PubSubSupervisor.this::run,
+                    0,
+                    delay.getMillis(),
+                    TimeUnit.MILLISECONDS
+            );
+            lifecycleStarted = true;
+        }
     }
 
-    @Override
-    protected Long getEndOfPartitionMarker()
+    public void run()
     {
-        return END_OF_PARTITION;
+        try {
+            if (spec.isSuspended()) {
+                log.info(
+                        "PubSub view supervisor[%s:%s] is suspended",
+                        spec.getId(),
+                        this.dataSource
+                );
+                return;
+            }
+
+            runInternal();
+        }
+        catch (Exception e) {
+            log.makeAlert(e, StringUtils.format("uncaught exception in %s.", supervisorId)).emit();
+        }
     }
 
     @Override
-    protected boolean isEndOfShard(Long seqNum)
+    public void stop(boolean stopGracefully)
     {
-        return false;
+        synchronized (stateChangeLock) {
+            Preconditions.checkState(started, "not started");
+            // stop all schedulers and threads
+            if (stopGracefully) {
+                synchronized (taskLock) {
+                    future.cancel(false);
+                    future = null;
+                    exec.shutdownNow();
+                    exec = null;
+                    clearTasks();
+                }
+            } else {
+                future.cancel(true);
+                future = null;
+                exec.shutdownNow();
+                exec = null;
+                synchronized (taskLock) {
+                    clearTasks();
+                }
+            }
+            started = false;
+        }
     }
 
     @Override
-    protected boolean useExclusiveStartSequenceNumberForNonFirstSequence()
+    public SupervisorReport getStatus()
     {
-        return false;
+        return new PubSubSupervisorReport(
+                dataSource,
+                DateTimes.nowUtc(),
+                spec.isSuspended()
+        );
     }
 
     @Override
-    protected void updateLatestSequenceFromStream(
-            RecordSupplier<Integer, Long> recordSupplier,
-            Set<StreamPartition<Integer>> partitions
+    public void reset(DataSourceMetadata dataSourceMetadata)
+    {
+        synchronized (taskLock) {
+            clearTasks();
+            clearSegments();
+        }
+    }
+
+    @Override
+    public void checkpoint(
+            @Nullable Integer taskGroupId,
+            String baseSequenceName,
+            DataSourceMetadata previousCheckPoint,
+            DataSourceMetadata currentCheckPoint
     )
     {
-        latestSequenceFromStream = partitions.stream()
-                .collect(Collectors.toMap(
-                        StreamPartition::getPartitionId,
-                        recordSupplier::getPosition
-                ));
+        // do nothing
     }
 
-    @Override
-    protected String baseTaskName()
+    private void runInternal() {
+        // todo: overwrite taskio config?
+
+        synchronized (taskLock) {
+            List<Interval> intervalsToRemove = new ArrayList<>();
+            for (Map.Entry<Interval, PubSubIndexTask> entry : runningTasks.entrySet()) {
+                Optional<TaskStatus> taskStatus = taskStorage.getStatus(entry.getValue().getId());
+                if (!taskStatus.isPresent() || !taskStatus.get().isRunnable()) {
+                    intervalsToRemove.add(entry.getKey());
+                }
+            }
+            for (Interval interval : intervalsToRemove) {
+                runningTasks.remove(interval);
+                runningVersion.remove(interval);
+            }
+
+            if (runningTasks.size() == maxTaskCount) {
+                //if the number of running tasks reach the max task count, supervisor won't submit new tasks.
+                return;
+            }
+
+            PubSubIndexTask indexTask = createTask();
+
+            Optional<TaskQueue> taskQueue = taskMaster.getTaskQueue();
+
+            if (taskQueue.isPresent()) {
+                try {
+                    taskQueue.get().add(indexTask);
+                } catch (EntryExistsException e) {
+                    log.error("Tried to add task [%s] but it already exists", indexTask.getId());
+                }
+            } else {
+                log.error("Failed to get task queue because I'm not the leader!");
+            }
+        }
+    }
+
+    private PubSubIndexTask createTask() {
+        String taskId = Joiner.on("_").join("pubsub_index", RandomIdUtils.getRandomId());
+
+        return new PubSubIndexTask(
+                taskId,
+                ioConfig.getProjectId(),
+                ioConfig.getSubscriptionId(),
+                supervisorId,
+                ioConfig.getDecompressData(),
+                new TaskResource(taskId, 1),
+                spec.getDataSchema(),
+                tuningConfig,
+                taskConfig,
+                new HashMap<String, Object>(),
+                null,
+                null,
+                rowIngestionMetersFactory,
+                null,
+                getFormattedGroupId(dataSource, TYPE)
+        );
+    }
+
+    protected static String getFormattedGroupId(String dataSource, String type)
     {
+        return StringUtils.format("%s_%s", type, dataSource);
+    }
+
+    @VisibleForTesting
+    Pair<Map<Interval, PubSubIndexTask>, Map<Interval, String>> getRunningTasks()
+    {
+        return new Pair<>(runningTasks, runningVersion);
+    }
+
+    private void clearTasks()
+    {
+        for (PubSubIndexTask task : runningTasks.values()) {
+            if (taskMaster.getTaskQueue().isPresent()) {
+                taskMaster.getTaskQueue().get().shutdown(task.getId(), "killing all tasks");
+            }
+        }
+        runningTasks.clear();
+        runningVersion.clear();
+    }
+
+    private void clearSegments()
+    {
+        log.info("Clear all metadata of dataSource %s", dataSource);
+        metadataStorageCoordinator.deletePendingSegments(dataSource, ALL_INTERVAL);
+        metadataStorageCoordinator.deleteDataSourceMetadata(dataSource);
+    }
+
+    protected String baseTaskName() {
         return "index_pubsub";
     }
 
-    @Override
     @VisibleForTesting
-    public PubSubSupervisorIOConfig getIoConfig()
-    {
+    public PubSubSupervisorIOConfig getIoConfig() {
         return spec.getIoConfig();
     }
 }

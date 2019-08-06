@@ -1,150 +1,99 @@
 package org.apache.druid.indexing.pubsub;
 
-
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Preconditions;
-import org.apache.druid.indexing.pubsub.supervisor.PubSubSupervisorIOConfig;
-import org.apache.druid.indexing.seekablestream.SeekableStreamEndSequenceNumbers;
-import org.apache.druid.indexing.seekablestream.SeekableStreamIndexTaskIOConfig;
-import org.apache.druid.indexing.seekablestream.SeekableStreamStartSequenceNumbers;
+import com.google.common.base.Optional;
+import org.apache.druid.segment.indexing.IOConfig;
 import org.joda.time.DateTime;
+import org.threeten.bp.Duration;
 
-import javax.annotation.Nullable;
-import java.util.Map;
-
-public class PubSubIndexTaskIOConfig extends SeekableStreamIndexTaskIOConfig<Integer, Long> {
-    private final Map<String, Object> consumerProperties;
-    private final long pollTimeout;
+// todo: io config provided by submitted tasks (is that even the case for pubsub?)
+public class PubSubIndexTaskIOConfig implements IOConfig {
+    private final Optional<DateTime> minimumMessageTime;
+    private final Optional<DateTime> maximumMessageTime;
+    private final int maxMessagesPerPoll;
+    private final int maxMessageSizePerPoll;
+    private final Duration keepAliveTime;
+    private final Duration keepAliveTimeout;
+    private final int maxRowsPerSegment;
+    private final long maxTotalRows;
+    private final int pushTimeout;
+    private final org.joda.time.Duration taskCheckDuration;
 
     @JsonCreator
     public PubSubIndexTaskIOConfig(
-            @JsonProperty("taskGroupId") @Nullable Integer taskGroupId, // can be null for backward compabitility
-            @JsonProperty("baseSequenceName") String baseSequenceName,
-            // startPartitions and endPartitions exist to be able to read old ioConfigs in metadata store
-            @JsonProperty("startPartitions") @Nullable
-            @Deprecated SeekableStreamEndSequenceNumbers<Integer, Long> startPartitions,
-            @JsonProperty("endPartitions") @Nullable
-            @Deprecated SeekableStreamEndSequenceNumbers<Integer, Long> endPartitions,
-            // startSequenceNumbers and endSequenceNumbers must be set for new versions
-            @JsonProperty("startSequenceNumbers")
-            @Nullable SeekableStreamStartSequenceNumbers<Integer, Long> startSequenceNumbers,
-            @JsonProperty("endSequenceNumbers")
-            @Nullable SeekableStreamEndSequenceNumbers<Integer, Long> endSequenceNumbers,
-            @JsonProperty("consumerProperties") Map<String, Object> consumerProperties,
-            @JsonProperty("pollTimeout") Long pollTimeout,
-            @JsonProperty("useTransaction") Boolean useTransaction,
             @JsonProperty("minimumMessageTime") DateTime minimumMessageTime,
-            @JsonProperty("maximumMessageTime") DateTime maximumMessageTime
-    )
-    {
-        super(
-                taskGroupId,
-                baseSequenceName,
-                startSequenceNumbers == null
-                        ? Preconditions.checkNotNull(startPartitions, "startPartitions").asStartPartitions(true)
-                        : startSequenceNumbers,
-                endSequenceNumbers == null ? endPartitions : endSequenceNumbers,
-                useTransaction,
-                minimumMessageTime,
-                maximumMessageTime
-        );
-
-        this.consumerProperties = Preconditions.checkNotNull(consumerProperties, "consumerProperties");
-        this.pollTimeout = pollTimeout != null ? pollTimeout : PubSubSupervisorIOConfig.DEFAULT_POLL_TIMEOUT_MILLIS;
-
-        final SeekableStreamEndSequenceNumbers<Integer, Long> myEndSequenceNumbers = getEndSequenceNumbers();
-        for (int partition : myEndSequenceNumbers.getPartitionSequenceNumberMap().keySet()) {
-            Preconditions.checkArgument(
-                    myEndSequenceNumbers.getPartitionSequenceNumberMap()
-                            .get(partition)
-                            .compareTo(getStartSequenceNumbers().getPartitionSequenceNumberMap().get(partition)) >= 0,
-                    "end offset must be >= start offset for partition[%s]",
-                    partition
-            );
-        }
-    }
-
-    public PubSubIndexTaskIOConfig(
-            int taskGroupId,
-            String baseSequenceName,
-            SeekableStreamStartSequenceNumbers<Integer, Long> startSequenceNumbers,
-            SeekableStreamEndSequenceNumbers<Integer, Long> endSequenceNumbers,
-            Map<String, Object> consumerProperties,
-            Long pollTimeout,
-            Boolean useTransaction,
-            DateTime minimumMessageTime,
-            DateTime maximumMessageTime
-    )
-    {
-        this(
-                taskGroupId,
-                baseSequenceName,
-                null,
-                null,
-                startSequenceNumbers,
-                endSequenceNumbers,
-                consumerProperties,
-                pollTimeout,
-                useTransaction,
-                minimumMessageTime,
-                maximumMessageTime
-        );
-    }
-
-    /**
-     * This method is for compatibilty so that newer version of KafkaIndexTaskIOConfig can be read by
-     * old version of Druid. Note that this method returns end sequence numbers instead of start. This is because
-     * {@link SeekableStreamStartSequenceNumbers} didn't exist before.
-     */
-    @JsonProperty
-    @Deprecated
-    public SeekableStreamEndSequenceNumbers<Integer, Long> getStartPartitions()
-    {
-        // Converting to start sequence numbers. This is allowed for Kafka because the start offset is always inclusive.
-        final SeekableStreamStartSequenceNumbers<Integer, Long> startSequenceNumbers = getStartSequenceNumbers();
-        return new SeekableStreamEndSequenceNumbers<>(
-                startSequenceNumbers.getStream(),
-                startSequenceNumbers.getPartitionSequenceNumberMap()
-        );
-    }
-
-    /**
-     * This method is for compatibility so that newer version of PubSubIndexTaskIOConfig can be read by
-     * old version of Druid.
-     */
-    @JsonProperty
-    @Deprecated
-    public SeekableStreamEndSequenceNumbers<Integer, Long> getEndPartitions()
-    {
-        return getEndSequenceNumbers();
+            @JsonProperty("maximumMessageTime") DateTime maximumMessageTime,
+            @JsonProperty("maxMessagesPerPoll") int maxMessagesPerPoll,
+            @JsonProperty("maxMessageSizePerPoll") int maxMessageSizePerPoll,
+            @JsonProperty("keepAliveTime") Duration keepAliveTime,
+            @JsonProperty("keepAliveTimeout") Duration keepAliveTimeout,
+            @JsonProperty("maxRowsPerSegment") int maxRowsPerSegment,
+            @JsonProperty("maxTotalRows") long maxTotalRows,
+            @JsonProperty("pushTimeout") int pushTimeout,
+            @JsonProperty("taskCheckDuration") org.joda.time.Duration taskCheckDuration
+    ) {
+        this.minimumMessageTime = Optional.fromNullable(minimumMessageTime);
+        this.maximumMessageTime = Optional.fromNullable(maximumMessageTime);
+        this.keepAliveTime = keepAliveTime;
+        this.keepAliveTimeout = keepAliveTimeout;
+        this.maxMessageSizePerPoll = maxMessageSizePerPoll;
+        this.maxMessagesPerPoll = maxMessagesPerPoll;
+        this.pushTimeout = pushTimeout;
+        this.maxTotalRows = maxTotalRows;
+        this.maxRowsPerSegment = maxRowsPerSegment;
+        this.taskCheckDuration = taskCheckDuration;
     }
 
     @JsonProperty
-    public Map<String, Object> getConsumerProperties()
-    {
-        return consumerProperties;
+    public Optional<DateTime> getMaximumMessageTime() {
+        return maximumMessageTime;
     }
 
     @JsonProperty
-    public long getPollTimeout()
-    {
-        return pollTimeout;
+    public Optional<DateTime> getMinimumMessageTime() {
+        return minimumMessageTime;
+    }
+
+    @JsonProperty
+    public int getMaxMessagesPerPoll() {
+        return maxMessagesPerPoll;
+    }
+
+    @JsonProperty
+    public int getMaxMessageSizePerPoll() {
+        return maxMessageSizePerPoll;
+    }
+
+    public Duration getKeepAliveTime() {
+        return keepAliveTime;
+    }
+
+    public Duration getKeepAliveTimeout() {
+        return keepAliveTimeout;
+    }
+
+    public org.joda.time.Duration getTaskCheckDuration() {
+        return this.taskCheckDuration;
     }
 
     @Override
-    public String toString()
-    {
+    public String toString() {
         return "PubSubIndexTaskIOConfig{" +
-                "taskGroupId=" + getTaskGroupId() +
-                ", baseSequenceName='" + getBaseSequenceName() + '\'' +
-                ", startSequenceNumbers=" + getStartSequenceNumbers() +
-                ", endSequenceNumbers=" + getEndSequenceNumbers() +
-                ", consumerProperties=" + consumerProperties +
-                ", pollTimeout=" + pollTimeout +
-                ", useTransaction=" + isUseTransaction() +
-                ", minimumMessageTime=" + getMinimumMessageTime() +
+                "minimumMessageTime=" + getMinimumMessageTime() +
                 ", maximumMessageTime=" + getMaximumMessageTime() +
                 '}';
+    }
+
+    public int getMaxRowsPerSegment() {
+        return maxRowsPerSegment;
+    }
+
+    public long getMaxTotalRows() {
+        return maxTotalRows;
+    }
+
+    public int getPushTimeout() {
+        return pushTimeout;
     }
 }

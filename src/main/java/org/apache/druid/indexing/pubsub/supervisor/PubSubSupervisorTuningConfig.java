@@ -14,9 +14,11 @@ import javax.annotation.Nullable;
 import java.io.File;
 
 public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
-        implements SeekableStreamSupervisorTuningConfig
 {
     private static final String DEFAULT_OFFSET_FETCH_PERIOD = "PT30S";
+    private static final String DEFAULT_HTTP_TIMEOUT = "PT10S";
+    private static final String DEFAULT_SHUTDOWN_TIMEOUT = "PT80S";
+    private static final int DEFAULT_CHAT_RETRIES = 8;
 
     private final Integer workerThreads;
     private final Integer chatThreads;
@@ -87,35 +89,30 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
         );
     }
 
-    @Override
     @JsonProperty
     public Integer getWorkerThreads()
     {
         return workerThreads;
     }
 
-    @Override
     @JsonProperty
     public Integer getChatThreads()
     {
         return chatThreads;
     }
 
-    @Override
     @JsonProperty
     public Long getChatRetries()
     {
         return chatRetries;
     }
 
-    @Override
     @JsonProperty
     public Duration getHttpTimeout()
     {
         return httpTimeout;
     }
 
-    @Override
     @JsonProperty
     public Duration getShutdownTimeout()
     {
@@ -155,30 +152,5 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
                 ", maxParseExceptions=" + getMaxParseExceptions() +
                 ", maxSavedParseExceptions=" + getMaxSavedParseExceptions() +
                 '}';
-    }
-
-    @Override
-    public SeekableStreamIndexTaskTuningConfig convertToTaskTuningConfig()
-    {
-        return new PubSubIndexTaskTuningConfig(
-                getMaxRowsInMemory(),
-                getMaxBytesInMemory(),
-                getMaxRowsPerSegment(),
-                getMaxTotalRows(),
-                getIntermediatePersistPeriod(),
-                getBasePersistDirectory(),
-                getMaxPendingPersists(),
-                getIndexSpec(),
-                getIndexSpecForIntermediatePersists(),
-                true,
-                isReportParseExceptions(),
-                getHandoffConditionTimeout(),
-                isResetOffsetAutomatically(),
-                getSegmentWriteOutMediumFactory(),
-                getIntermediateHandoffPeriod(),
-                isLogParseExceptions(),
-                getMaxParseExceptions(),
-                getMaxSavedParseExceptions()
-        );
     }
 }

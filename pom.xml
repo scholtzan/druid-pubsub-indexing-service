@@ -31,8 +31,16 @@
             <groupId>org.apache.druid</groupId>
             <artifactId>druid-indexing-service</artifactId>
             <version>0.16.0-incubating-SNAPSHOT</version>
-            <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.druid</groupId>
+            <artifactId>druid-server</artifactId>
+            <version>0.15.0-incubating</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.cloud</groupId>
+            <artifactId>google-cloud-pubsub</artifactId>
+            <version>1.84.0</version>
         </dependency>
     </dependencies>
-
 </project>
