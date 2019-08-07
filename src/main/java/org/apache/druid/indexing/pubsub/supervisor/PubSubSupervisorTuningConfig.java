@@ -1,9 +1,9 @@
 package org.apache.druid.indexing.pubsub.supervisor;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import org.apache.druid.indexing.pubsub.PubSubIndexTaskTuningConfig;
 import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorTuningConfig;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import org.apache.druid.indexing.seekablestream.SeekableStreamIndexTaskTuningConfig;
+import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.segment.IndexSpec;
 import org.apache.druid.segment.indexing.TuningConfigs;
 import org.apache.druid.segment.writeout.SegmentWriteOutMediumFactory;
@@ -13,8 +13,9 @@ import org.joda.time.Period;
 import javax.annotation.Nullable;
 import java.io.File;
 
-public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
-{
+public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig {
+    private static final EmittingLogger log = new EmittingLogger(PubSubSupervisorTuningConfig.class);
+
     private static final String DEFAULT_OFFSET_FETCH_PERIOD = "PT30S";
     private static final String DEFAULT_HTTP_TIMEOUT = "PT10S";
     private static final String DEFAULT_SHUTDOWN_TIMEOUT = "PT80S";
@@ -37,7 +38,6 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
             @JsonProperty("maxPendingPersists") Integer maxPendingPersists,
             @JsonProperty("indexSpec") IndexSpec indexSpec,
             @JsonProperty("indexSpecForIntermediatePersists") @Nullable IndexSpec indexSpecForIntermediatePersists,
-            // This parameter is left for compatibility when reading existing configs, to be removed in Druid 0.12.
             @JsonProperty("buildV9Directly") Boolean buildV9Directly,
             @JsonProperty("reportParseExceptions") Boolean reportParseExceptions,
             @JsonProperty("handoffConditionTimeout") Long handoffConditionTimeout,
@@ -53,8 +53,7 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
             @JsonProperty("logParseExceptions") @Nullable Boolean logParseExceptions,
             @JsonProperty("maxParseExceptions") @Nullable Integer maxParseExceptions,
             @JsonProperty("maxSavedParseExceptions") @Nullable Integer maxSavedParseExceptions
-    )
-    {
+    ) {
         super(
                 maxRowsInMemory,
                 maxBytesInMemory,
@@ -64,9 +63,6 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
                 basePersistDirectory,
                 maxPendingPersists,
                 indexSpec,
-                indexSpecForIntermediatePersists,
-                true,
-                reportParseExceptions,
                 handoffConditionTimeout,
                 resetOffsetAutomatically,
                 segmentWriteOutMediumFactory,
@@ -75,6 +71,8 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
                 maxParseExceptions,
                 maxSavedParseExceptions
         );
+        log.info("Init PubSubSupervisorTuningConfig");
+
         this.workerThreads = workerThreads;
         this.chatThreads = chatThreads;
         this.chatRetries = (chatRetries != null ? chatRetries : DEFAULT_CHAT_RETRIES);
@@ -90,44 +88,27 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig
     }
 
     @JsonProperty
-    public Integer getWorkerThreads()
-    {
+    public Integer getWorkerThreads() {
         return workerThreads;
     }
 
     @JsonProperty
-    public Integer getChatThreads()
-    {
+    public Integer getChatThreads() {
         return chatThreads;
     }
 
     @JsonProperty
-    public Long getChatRetries()
-    {
+    public Long getChatRetries() {
         return chatRetries;
     }
 
     @JsonProperty
-    public Duration getHttpTimeout()
-    {
+    public Duration getHttpTimeout() {
         return httpTimeout;
     }
 
-    @JsonProperty
-    public Duration getShutdownTimeout()
-    {
-        return shutdownTimeout;
-    }
-
-    @JsonProperty
-    public Duration getOffsetFetchPeriod()
-    {
-        return offsetFetchPeriod;
-    }
-
     @Override
-    public String toString()
-    {
+    public String toString() {
         return "PubSubSupervisorTuningConfig{" +
                 "maxRowsInMemory=" + getMaxRowsInMemory() +
                 ", maxRowsPerSegment=" + getMaxRowsPerSegment() +

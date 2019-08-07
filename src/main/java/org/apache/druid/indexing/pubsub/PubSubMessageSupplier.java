@@ -3,17 +3,15 @@ package org.apache.druid.indexing.pubsub;
 import com.google.cloud.pubsub.v1.stub.GrpcSubscriberStub;
 import com.google.cloud.pubsub.v1.stub.SubscriberStub;
 import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
-import com.google.common.collect.Queues;
 import com.google.pubsub.v1.*;
 import org.apache.druid.indexing.seekablestream.common.StreamException;
 import org.apache.druid.java.util.common.ISE;
+import org.apache.druid.java.util.common.logger.Logger;
+import org.threeten.bp.Duration;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
-
-import org.apache.druid.java.util.common.logger.Logger;
-import org.threeten.bp.Duration;
 
 public class PubSubMessageSupplier {
     private final SubscriberStub subscriber;

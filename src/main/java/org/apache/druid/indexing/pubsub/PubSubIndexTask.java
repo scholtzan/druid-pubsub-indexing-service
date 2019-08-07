@@ -24,8 +24,9 @@ import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.parsers.ParseException;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.segment.indexing.DataSchema;
-import org.apache.druid.segment.realtime.FireDepartmentMetrics;
-import org.apache.druid.segment.realtime.appenderator.*;
+import org.apache.druid.segment.realtime.appenderator.Appenderator;
+import org.apache.druid.segment.realtime.appenderator.BatchAppenderatorDriver;
+import org.apache.druid.segment.realtime.appenderator.SegmentAllocator;
 import org.apache.druid.segment.realtime.firehose.ChatHandler;
 import org.apache.druid.segment.realtime.firehose.ChatHandlerProvider;
 import org.apache.druid.server.security.AuthorizerMapper;
@@ -161,25 +162,6 @@ public class PubSubIndexTask extends AbstractTask implements ChatHandler {
     @Override
     public String getType() {
         return TYPE;
-    }
-
-    public Appenderator newAppenderator(FireDepartmentMetrics metrics, TaskToolbox toolbox) {
-        return Appenderators.createRealtime(
-                dataSchema,
-                tuningConfig.withBasePersistDirectory(toolbox.getPersistDir()),
-                metrics,
-                toolbox.getSegmentPusher(),
-                toolbox.getObjectMapper(),
-                toolbox.getIndexIO(),
-                toolbox.getIndexMergerV9(),
-                toolbox.getQueryRunnerFactoryConglomerate(),
-                toolbox.getSegmentAnnouncer(),
-                toolbox.getEmitter(),
-                toolbox.getQueryExecutorService(),
-                toolbox.getCache(),
-                toolbox.getCacheConfig(),
-                toolbox.getCachePopulatorStats()
-        );
     }
 
     public BatchAppenderatorDriver newDriver(

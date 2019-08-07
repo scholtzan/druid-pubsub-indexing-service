@@ -1,6 +1,5 @@
 package org.apache.druid.indexing.pubsub.supervisor;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Joiner;
@@ -16,28 +15,28 @@ import org.apache.druid.indexer.TaskStatus;
 import org.apache.druid.indexing.common.IndexTaskClient;
 import org.apache.druid.indexing.common.TaskInfoProvider;
 import org.apache.druid.indexing.common.stats.RowIngestionMetersFactory;
-import org.apache.druid.indexing.common.task.HadoopIndexTask;
 import org.apache.druid.indexing.common.task.TaskResource;
 import org.apache.druid.indexing.overlord.*;
 import org.apache.druid.indexing.overlord.supervisor.Supervisor;
 import org.apache.druid.indexing.overlord.supervisor.SupervisorReport;
 import org.apache.druid.indexing.pubsub.*;
-import org.apache.druid.indexing.seekablestream.*;
-import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorIOConfig;
 import org.apache.druid.indexing.seekablestream.utils.RandomIdUtils;
-import org.apache.druid.java.util.common.*;
+import org.apache.druid.java.util.common.DateTimes;
+import org.apache.druid.java.util.common.Intervals;
+import org.apache.druid.java.util.common.Pair;
+import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.metadata.EntryExistsException;
-import org.apache.druid.metadata.MetadataSupervisorManager;
-import org.apache.druid.timeline.DataSegment;
-import org.jcodings.util.Hash;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 import org.joda.time.Interval;
 
 import javax.annotation.Nullable;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static javax.xml.crypto.dsig.SignatureProperties.TYPE;
@@ -117,11 +116,9 @@ public class PubSubSupervisor implements Supervisor {
                 ? Integer.parseInt(String.valueOf(spec.getContext().get("maxTaskCount")))
                 : DEFAULT_MAX_TASK_COUNT;
 
-        this.taskInfoProvider = new TaskInfoProvider()
-        {
+        this.taskInfoProvider = new TaskInfoProvider() {
             @Override
-            public TaskLocation getTaskLocation(final String id)
-            {
+            public TaskLocation getTaskLocation(final String id) {
                 Preconditions.checkNotNull(id, "id");
                 Optional<TaskRunner> taskRunner = taskMaster.getTaskRunner();
                 if (taskRunner.isPresent()) {
@@ -141,8 +138,7 @@ public class PubSubSupervisor implements Supervisor {
             }
 
             @Override
-            public Optional<TaskStatus> getTaskStatus(String id)
-            {
+            public Optional<TaskStatus> getTaskStatus(String id) {
                 return taskStorage.getStatus(id);
             }
         };
@@ -185,8 +181,8 @@ public class PubSubSupervisor implements Supervisor {
     }
 
     @Override
-    public void start()
-    {
+    public void start() {
+        log.info("Start Pub/Sub supervisor");
         synchronized (stateChangeLock) {
             Preconditions.checkState(!lifecycleStarted, "already started");
             Preconditions.checkState(!exec.isShutdown(), "already stopped");
@@ -203,8 +199,7 @@ public class PubSubSupervisor implements Supervisor {
         }
     }
 
-    public void run()
-    {
+    public void run() {
         try {
             if (spec.isSuspended()) {
                 log.info(
@@ -216,15 +211,13 @@ public class PubSubSupervisor implements Supervisor {
             }
 
             runInternal();
-        }
-        catch (Exception e) {
+        } catch (Exception e) {
             log.makeAlert(e, StringUtils.format("uncaught exception in %s.", supervisorId)).emit();
         }
     }
 
     @Override
-    public void stop(boolean stopGracefully)
-    {
+    public void stop(boolean stopGracefully) {
         synchronized (stateChangeLock) {
             Preconditions.checkState(started, "not started");
             // stop all schedulers and threads
@@ -250,8 +243,7 @@ public class PubSubSupervisor implements Supervisor {
     }
 
     @Override
-    public SupervisorReport getStatus()
-    {
+    public SupervisorReport getStatus() {
         return new PubSubSupervisorReport(
                 dataSource,
                 DateTimes.nowUtc(),
@@ -260,8 +252,7 @@ public class PubSubSupervisor implements Supervisor {
     }
 
     @Override
-    public void reset(DataSourceMetadata dataSourceMetadata)
-    {
+    public void reset(DataSourceMetadata dataSourceMetadata) {
         synchronized (taskLock) {
             clearTasks();
             clearSegments();
@@ -274,8 +265,7 @@ public class PubSubSupervisor implements Supervisor {
             String baseSequenceName,
             DataSourceMetadata previousCheckPoint,
             DataSourceMetadata currentCheckPoint
-    )
-    {
+    ) {
         // do nothing
     }
 
@@ -338,19 +328,16 @@ public class PubSubSupervisor implements Supervisor {
         );
     }
 
-    protected static String getFormattedGroupId(String dataSource, String type)
-    {
+    protected static String getFormattedGroupId(String dataSource, String type) {
         return StringUtils.format("%s_%s", type, dataSource);
     }
 
     @VisibleForTesting
-    Pair<Map<Interval, PubSubIndexTask>, Map<Interval, String>> getRunningTasks()
-    {
+    Pair<Map<Interval, PubSubIndexTask>, Map<Interval, String>> getRunningTasks() {
         return new Pair<>(runningTasks, runningVersion);
     }
 
-    private void clearTasks()
-    {
+    private void clearTasks() {
         for (PubSubIndexTask task : runningTasks.values()) {
             if (taskMaster.getTaskQueue().isPresent()) {
                 taskMaster.getTaskQueue().get().shutdown(task.getId(), "killing all tasks");
@@ -360,8 +347,7 @@ public class PubSubSupervisor implements Supervisor {
         runningVersion.clear();
     }
 
-    private void clearSegments()
-    {
+    private void clearSegments() {
         log.info("Clear all metadata of dataSource %s", dataSource);
         metadataStorageCoordinator.deletePendingSegments(dataSource, ALL_INTERVAL);
         metadataStorageCoordinator.deleteDataSourceMetadata(dataSource);

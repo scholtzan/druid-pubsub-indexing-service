@@ -2,14 +2,10 @@ package org.apache.druid.indexing.pubsub.supervisor;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import com.google.common.base.Preconditions;
-import org.apache.druid.indexing.seekablestream.supervisor.SeekableStreamSupervisorIOConfig;
-import org.apache.druid.java.util.common.StringUtils;
-import org.joda.time.Period;
 import com.google.common.base.Optional;
+import com.google.common.base.Preconditions;
+import org.joda.time.Period;
 import org.threeten.bp.Duration;
-
-import java.util.Map;
 
 public class PubSubSupervisorIOConfig {
     public static final long DEFAULT_POLL_TIMEOUT_MILLIS = 100;
@@ -51,7 +47,7 @@ public class PubSubSupervisorIOConfig {
             @JsonProperty("maxMessagesPerPoll") int maxMessagesPerPoll,
             @JsonProperty("maxMessageSizePerPoll") int maxMessageSizePerPoll,
             @JsonProperty("keepAliveTime") Duration keepAliveTime,
-            @JsonProperty("keepAliveTime") Duration keepAliveTimeout,
+            @JsonProperty("keepAliveTimeout") Duration keepAliveTimeout,
             @JsonProperty("decompressData") boolean decompressData
     )
     {

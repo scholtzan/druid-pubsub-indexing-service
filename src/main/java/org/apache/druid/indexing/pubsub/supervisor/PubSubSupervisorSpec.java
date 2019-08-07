@@ -100,25 +100,6 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
         return ioConfig;
     }
 
-    protected PubSubSupervisorSpec toggleSuspend(boolean suspend) {
-        return new PubSubSupervisorSpec(
-                getDataSchema(),
-                getTuningConfig(),
-                getIoConfig(),
-                getContext(),
-                suspend,
-                taskStorage,
-                taskMaster,
-                indexerMetadataStorageCoordinator,
-                (PubSubIndexTaskClientFactory) indexTaskClientFactory,
-                mapper,
-                emitter,
-                monitorSchedulerConfig,
-                rowIngestionMetersFactory,
-                taskIOConfig
-        );
-    }
-
     @Override
     public String toString() {
         return "PubSubSupervisorSpec{" +

@@ -5,18 +5,17 @@ import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.Binder;
-import com.google.inject.TypeLiteral;
-import org.apache.druid.guice.JsonConfigProvider;
-import org.apache.druid.guice.LazySingleton;
 import org.apache.druid.indexing.pubsub.supervisor.PubSubSupervisorSpec;
 import org.apache.druid.indexing.pubsub.supervisor.PubSubSupervisorTuningConfig;
-import org.apache.druid.indexing.seekablestream.SeekableStreamIndexTaskClientFactory;
 import org.apache.druid.initialization.DruidModule;
+import org.apache.druid.java.util.emitter.EmittingLogger;
 
 import java.util.List;
 
 
 public class PubSubIndexTaskModule implements DruidModule {
+    private static final EmittingLogger log = new EmittingLogger(PubSubIndexTaskModule.class);
+
     @Override
     public List<? extends Module> getJacksonModules() {
         return ImmutableList.of(
@@ -33,9 +32,11 @@ public class PubSubIndexTaskModule implements DruidModule {
 
     @Override
     public void configure(Binder binder) {
-        binder.bind(
-                new TypeLiteral<PubSubIndexTaskClientFactory>() {
-                }
-        ).to(PubSubIndexTaskClientFactory.class).in(LazySingleton.class);
+        log.info("Bind Pub/Sub indexing service");
+
+//        binder.bind(
+//                new TypeLiteral<PubSubIndexTaskClientFactory>() {
+//                }
+//        ).to(PubSubIndexTaskClientFactory.class).in(LazySingleton.class);
     }
 }
