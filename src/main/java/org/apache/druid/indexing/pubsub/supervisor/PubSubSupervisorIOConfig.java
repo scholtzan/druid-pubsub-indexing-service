@@ -4,16 +4,17 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import org.joda.time.DateTime;
 import org.joda.time.Period;
 import org.threeten.bp.Duration;
 
 public class PubSubSupervisorIOConfig {
-    public static final long DEFAULT_POLL_TIMEOUT_MILLIS = 100;
+    public static final int DEFAULT_POLL_TIMEOUT_MILLIS = 100;
 
     private final String topic;
     private final String projectId;
     private final String subscriptionId;
-    private final long pollTimeout;
+    private final int pollTimeout;
     private final Integer replicas;
     private final Integer taskCount;
     private final org.joda.time.Duration taskDuration;
@@ -27,7 +28,8 @@ public class PubSubSupervisorIOConfig {
     private Duration keepAliveTime;
     private Duration keepAliveTimeout;
     private boolean decompressData;
-
+    private final Optional<DateTime> minimumMessageTime;
+    private final Optional<DateTime> maximumMessageTime;
 
     @JsonCreator
     public PubSubSupervisorIOConfig(
@@ -37,7 +39,7 @@ public class PubSubSupervisorIOConfig {
             @JsonProperty("replicas") Integer replicas,
             @JsonProperty("taskCount") Integer taskCount,
             @JsonProperty("taskDuration") Period taskDuration,
-            @JsonProperty("pollTimeout") Long pollTimeout,
+            @JsonProperty("pollTimeout") Integer pollTimeout,
             @JsonProperty("startDelay") Period startDelay,
             @JsonProperty("period") Period period,
             @JsonProperty("useEarliestOffset") Boolean useEarliestOffset,
@@ -48,7 +50,9 @@ public class PubSubSupervisorIOConfig {
             @JsonProperty("maxMessageSizePerPoll") int maxMessageSizePerPoll,
             @JsonProperty("keepAliveTime") Duration keepAliveTime,
             @JsonProperty("keepAliveTimeout") Duration keepAliveTimeout,
-            @JsonProperty("decompressData") boolean decompressData
+            @JsonProperty("decompressData") boolean decompressData,
+            @JsonProperty("minimumMessageTime") DateTime minimumMessageTime,
+            @JsonProperty("maximumMessageTime") DateTime maximumMessageTime
     )
     {
         this.pollTimeout = pollTimeout != null ? pollTimeout : DEFAULT_POLL_TIMEOUT_MILLIS;
@@ -72,6 +76,8 @@ public class PubSubSupervisorIOConfig {
         this.keepAliveTime = keepAliveTime;
         this.keepAliveTimeout = keepAliveTimeout;
         this.decompressData = decompressData;
+        this.minimumMessageTime = Optional.fromNullable(minimumMessageTime);
+        this.maximumMessageTime = Optional.fromNullable(maximumMessageTime);
     }
 
     private static org.joda.time.Duration defaultDuration(final Period period, final String theDefault)
@@ -79,6 +85,15 @@ public class PubSubSupervisorIOConfig {
         return (period == null ? new Period(theDefault) : period).toStandardDuration();
     }
 
+    @JsonProperty
+    public Optional<DateTime> getMaximumMessageTime() {
+        return maximumMessageTime;
+    }
+
+    @JsonProperty
+    public Optional<DateTime> getMinimumMessageTime() {
+        return minimumMessageTime;
+    }
 
     @JsonProperty
     public String getTopic()
@@ -145,7 +160,7 @@ public class PubSubSupervisorIOConfig {
     }
 
     @JsonProperty
-    public long getPollTimeout()
+    public int getPollTimeout()
     {
         return pollTimeout;
     }

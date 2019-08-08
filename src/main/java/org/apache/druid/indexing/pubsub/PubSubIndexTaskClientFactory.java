@@ -1,6 +1,7 @@
 package org.apache.druid.indexing.pubsub;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.inject.Inject;
 import org.apache.druid.guice.annotations.EscalatedGlobal;
 import org.apache.druid.guice.annotations.Json;
 import org.apache.druid.indexing.common.TaskInfoProvider;
@@ -15,10 +16,12 @@ public class PubSubIndexTaskClientFactory implements IndexTaskClientFactory<PubS
     private final HttpClient httpClient;
     private final ObjectMapper mapper;
 
+    @Inject
     public PubSubIndexTaskClientFactory(
             @EscalatedGlobal HttpClient httpClient,
             @Json ObjectMapper mapper
     ) {
+        log.info("Init Pub/Sub IndexTaskClientFactory");
         this.httpClient = httpClient;
         this.mapper = mapper;
     }

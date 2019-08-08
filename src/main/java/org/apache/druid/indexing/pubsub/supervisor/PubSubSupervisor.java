@@ -29,8 +29,8 @@ import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.metadata.EntryExistsException;
 import org.joda.time.DateTime;
-import org.joda.time.Duration;
 import org.joda.time.Interval;
+import org.joda.time.Period;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -51,6 +51,9 @@ public class PubSubSupervisor implements Supervisor {
     private static final Interval ALL_INTERVAL = Intervals.of("0000-01-01/3000-01-01");
     private static final int DEFAULT_MAX_TASK_COUNT = 1;
     private static final long INITIAL_EMIT_LAG_METRIC_DELAY_MILLIS = 25000;
+    private static final int DEFAULT_MAX_ROWS_PER_SEGMENT = 5_000_000;
+    private static final int DEFAULT_MAX_TOTAL_ROWS = 25000;
+
     private static final Long NOT_SET = -1L;
     private static final Long END_OF_PARTITION = Long.MAX_VALUE;
     private static final long MAX_RUN_FREQUENCY_MILLIS = 1000;
@@ -74,7 +77,6 @@ public class PubSubSupervisor implements Supervisor {
     private ListeningScheduledExecutorService exec = null;
     private ListenableFuture<?> future = null;
     private final Object taskLock = new Object();
-    private final PubSubIndexTaskIOConfig taskConfig;
     private final Map<Interval, PubSubIndexTask> runningTasks = new HashMap<>();
     private final Map<Interval, String> runningVersion = new HashMap<>();
     private final int maxTaskCount;
@@ -88,7 +90,7 @@ public class PubSubSupervisor implements Supervisor {
     private volatile boolean started = false;
     private volatile boolean stopped = false;
     private volatile boolean lifecycleStarted = false;
-
+    private final PubSubIndexTaskIOConfig taskConfig;
 
     public PubSubSupervisor(
             final String supervisorId,
@@ -98,9 +100,10 @@ public class PubSubSupervisor implements Supervisor {
             final PubSubIndexTaskClientFactory taskClientFactory,
             final ObjectMapper mapper,
             final PubSubSupervisorSpec spec,
-            final RowIngestionMetersFactory rowIngestionMetersFactory,
-            final PubSubIndexTaskIOConfig taskConfig
+            final RowIngestionMetersFactory rowIngestionMetersFactory
     ) {
+        log.info("Pub/Sub supervisor initialized");
+
         this.supervisorId = supervisorId;
         this.spec = spec;
         this.taskStorage = taskStorage;
@@ -111,10 +114,13 @@ public class PubSubSupervisor implements Supervisor {
         this.ioConfig = spec.getIoConfig();
         this.tuningConfig = spec.getTuningConfig();
         this.dataSource = spec.getDataSchema().getDataSource();
-        this.taskConfig = taskConfig;
-        this.maxTaskCount = spec.getContext().containsKey("maxTaskCount")
+        log.info("Pub/Sub supervisor initialized-2");
+        this.maxTaskCount = spec.getContext() != null && spec.getContext().containsKey("maxTaskCount")
                 ? Integer.parseInt(String.valueOf(spec.getContext().get("maxTaskCount")))
                 : DEFAULT_MAX_TASK_COUNT;
+        log.info("Pub/Sub supervisor initialized-3");
+
+        this.taskConfig = createTaskIOConfig();
 
         this.taskInfoProvider = new TaskInfoProvider() {
             @Override
@@ -185,14 +191,12 @@ public class PubSubSupervisor implements Supervisor {
         log.info("Start Pub/Sub supervisor");
         synchronized (stateChangeLock) {
             Preconditions.checkState(!lifecycleStarted, "already started");
-            Preconditions.checkState(!exec.isShutdown(), "already stopped");
-
             exec = MoreExecutors.listeningDecorator(Execs.scheduledSingleThreaded(supervisorId));
-            final Duration delay = taskConfig.getTaskCheckDuration();
+
             future = exec.scheduleWithFixedDelay(
                     PubSubSupervisor.this::run,
                     0,
-                    delay.getMillis(),
+                    taskConfig.getTaskCheckDuration(),
                     TimeUnit.MILLISECONDS
             );
             lifecycleStarted = true;
@@ -269,9 +273,21 @@ public class PubSubSupervisor implements Supervisor {
         // do nothing
     }
 
-    private void runInternal() {
-        // todo: overwrite taskio config?
+    private PubSubIndexTaskIOConfig createTaskIOConfig() {
+        return new PubSubIndexTaskIOConfig(
+                ioConfig.getMinimumMessageTime(),
+                ioConfig.getMaximumMessageTime(),
+                ioConfig.getMaxMessagesPerPoll(),
+                ioConfig.getMaxMessageSizePerPoll(),
+                ioConfig.getKeepAliveTime(),
+                ioConfig.getKeepAliveTimeout(),
+                tuningConfig.getMaxRowsPerSegment() == null ? DEFAULT_MAX_ROWS_PER_SEGMENT : tuningConfig.getMaxRowsPerSegment(),
+                tuningConfig.getMaxTotalRows() == null ? DEFAULT_MAX_TOTAL_ROWS : tuningConfig.getMaxTotalRows(),
+                ioConfig.getPollTimeout()
+        );
+    }
 
+    private void runInternal() {
         synchronized (taskLock) {
             List<Interval> intervalsToRemove = new ArrayList<>();
             for (Map.Entry<Interval, PubSubIndexTask> entry : runningTasks.entrySet()) {

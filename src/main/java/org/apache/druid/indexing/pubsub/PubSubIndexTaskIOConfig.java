@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Optional;
 import org.apache.druid.segment.indexing.IOConfig;
 import org.joda.time.DateTime;
+import org.joda.time.Period;
 import org.threeten.bp.Duration;
 
 // todo: io config provided by submitted tasks (is that even the case for pubsub?)
@@ -18,23 +19,22 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
     private final int maxRowsPerSegment;
     private final long maxTotalRows;
     private final int pushTimeout;
-    private final org.joda.time.Duration taskCheckDuration;
+    private final int taskCheckDuration;
 
     @JsonCreator
     public PubSubIndexTaskIOConfig(
-            @JsonProperty("minimumMessageTime") DateTime minimumMessageTime,
-            @JsonProperty("maximumMessageTime") DateTime maximumMessageTime,
+            @JsonProperty("minimumMessageTime") Optional<DateTime> minimumMessageTime,
+            @JsonProperty("maximumMessageTime") Optional<DateTime> maximumMessageTime,
             @JsonProperty("maxMessagesPerPoll") int maxMessagesPerPoll,
             @JsonProperty("maxMessageSizePerPoll") int maxMessageSizePerPoll,
             @JsonProperty("keepAliveTime") Duration keepAliveTime,
             @JsonProperty("keepAliveTimeout") Duration keepAliveTimeout,
             @JsonProperty("maxRowsPerSegment") int maxRowsPerSegment,
             @JsonProperty("maxTotalRows") long maxTotalRows,
-            @JsonProperty("pushTimeout") int pushTimeout,
-            @JsonProperty("taskCheckDuration") org.joda.time.Duration taskCheckDuration
+            @JsonProperty("pushTimeout") int pushTimeout
     ) {
-        this.minimumMessageTime = Optional.fromNullable(minimumMessageTime);
-        this.maximumMessageTime = Optional.fromNullable(maximumMessageTime);
+        this.minimumMessageTime = minimumMessageTime;
+        this.maximumMessageTime = maximumMessageTime;
         this.keepAliveTime = keepAliveTime;
         this.keepAliveTimeout = keepAliveTimeout;
         this.maxMessageSizePerPoll = maxMessageSizePerPoll;
@@ -42,7 +42,7 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
         this.pushTimeout = pushTimeout;
         this.maxTotalRows = maxTotalRows;
         this.maxRowsPerSegment = maxRowsPerSegment;
-        this.taskCheckDuration = taskCheckDuration;
+        this.taskCheckDuration = 60000;
     }
 
     @JsonProperty
@@ -73,7 +73,7 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
         return keepAliveTimeout;
     }
 
-    public org.joda.time.Duration getTaskCheckDuration() {
+    public int getTaskCheckDuration() {
         return this.taskCheckDuration;
     }
 

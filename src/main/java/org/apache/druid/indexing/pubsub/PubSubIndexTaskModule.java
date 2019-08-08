@@ -18,6 +18,8 @@ public class PubSubIndexTaskModule implements DruidModule {
 
     @Override
     public List<? extends Module> getJacksonModules() {
+        log.info("Pub/Sub register modules");
+
         return ImmutableList.of(
                 new SimpleModule(getClass().getSimpleName())
                         .registerSubtypes(

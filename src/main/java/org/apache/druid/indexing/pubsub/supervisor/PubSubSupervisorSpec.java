@@ -39,7 +39,6 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
     protected final ServiceEmitter emitter;
     protected final DruidMonitorSchedulerConfig monitorSchedulerConfig;
     private final boolean suspended;
-    private final PubSubIndexTaskIOConfig taskIOConfig;
 
     @JsonCreator
     public PubSubSupervisorSpec(
@@ -55,9 +54,8 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
             @JacksonInject @Json ObjectMapper mapper,
             @JacksonInject ServiceEmitter emitter,
             @JacksonInject DruidMonitorSchedulerConfig monitorSchedulerConfig,
-            @JacksonInject RowIngestionMetersFactory rowIngestionMetersFactory,
-            @JacksonInject PubSubIndexTaskIOConfig taskIOConfig
-            ) {
+            @JacksonInject RowIngestionMetersFactory rowIngestionMetersFactory
+    ) {
         this.dataSchema = Preconditions.checkNotNull(dataSchema, "dataSchema");
         this.tuningConfig = tuningConfig; // null check done in concrete class
         this.ioConfig = Preconditions.checkNotNull(ioConfig, "ioConfig");
@@ -72,7 +70,6 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
         this.monitorSchedulerConfig = monitorSchedulerConfig;
         this.rowIngestionMetersFactory = rowIngestionMetersFactory;
         this.suspended = suspended != null ? suspended : false;
-        this.taskIOConfig = taskIOConfig;
     }
 
     @Override
@@ -85,8 +82,7 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
                 indexTaskClientFactory,
                 mapper,
                 this,
-                rowIngestionMetersFactory,
-                taskIOConfig
+                rowIngestionMetersFactory
                 );
     }
 

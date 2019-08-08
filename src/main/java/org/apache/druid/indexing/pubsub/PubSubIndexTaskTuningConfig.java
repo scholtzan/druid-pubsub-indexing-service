@@ -23,11 +23,11 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
     private static final int DEFAULT_MAX_ROWS_PER_SEGMENT = 5_000_000;
     private static final boolean DEFAULT_RESET_OFFSET_AUTOMATICALLY = false;
     private static final boolean DEFAULT_SKIP_SEQUENCE_NUMBER_AVAILABILITY_CHECK = false;
+    private static final int DEFAULT_MAX_TOTAL_ROWS = 25000;
 
     private final int maxRowsInMemory;
     private final long maxBytesInMemory;
     private final int maxRowsPerSegment;
-    @Nullable
     private final Long maxTotalRows;
     private final Period intermediatePersistPeriod;
     private final File basePersistDirectory;
@@ -64,15 +64,14 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
             @JsonProperty("logParseExceptions") @Nullable Boolean logParseExceptions,
             @JsonProperty("maxParseExceptions") @Nullable Integer maxParseExceptions,
             @JsonProperty("maxSavedParseExceptions") @Nullable Integer maxSavedParseExceptions
-    )
-    {
+    ) {
         log.info("Init PubSubIndexTaskTuningConfig");
         // Cannot be a static because default basePersistDirectory is unique per-instance
         final RealtimeTuningConfig defaults = RealtimeTuningConfig.makeDefaultTuningConfig(basePersistDirectory);
 
         this.maxRowsInMemory = maxRowsInMemory == null ? defaults.getMaxRowsInMemory() : maxRowsInMemory;
         this.maxRowsPerSegment = maxRowsPerSegment == null ? DEFAULT_MAX_ROWS_PER_SEGMENT : maxRowsPerSegment;
-        this.maxTotalRows = maxTotalRows;
+        this.maxTotalRows = maxTotalRows == null ? DEFAULT_MAX_TOTAL_ROWS : maxTotalRows;
         // initializing this to 0, it will be lazily initialized to a value
         // @see server.src.main.java.org.apache.druid.segment.indexing.TuningConfigs#getMaxBytesInMemoryOrDefault(long)
         this.maxBytesInMemory = maxBytesInMemory == null ? 0 : maxBytesInMemory;
@@ -113,59 +112,50 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
 
     @Override
     @JsonProperty
-    public int getMaxRowsInMemory()
-    {
+    public int getMaxRowsInMemory() {
         return maxRowsInMemory;
     }
 
     @Override
     @JsonProperty
-    public long getMaxBytesInMemory()
-    {
+    public long getMaxBytesInMemory() {
         return maxBytesInMemory;
     }
 
     @Override
     @JsonProperty
-    public Integer getMaxRowsPerSegment()
-    {
+    public Integer getMaxRowsPerSegment() {
         return maxRowsPerSegment;
     }
 
     @JsonProperty
     @Override
-    @Nullable
-    public Long getMaxTotalRows()
-    {
+    public Long getMaxTotalRows() {
         return maxTotalRows;
     }
 
     @Override
     @JsonProperty
-    public Period getIntermediatePersistPeriod()
-    {
+    public Period getIntermediatePersistPeriod() {
         return intermediatePersistPeriod;
     }
 
     @Override
     @JsonProperty
-    public File getBasePersistDirectory()
-    {
+    public File getBasePersistDirectory() {
         return basePersistDirectory;
     }
 
     @Override
     @JsonProperty
     @Deprecated
-    public int getMaxPendingPersists()
-    {
+    public int getMaxPendingPersists() {
         return maxPendingPersists;
     }
 
     @Override
     @JsonProperty
-    public IndexSpec getIndexSpec()
-    {
+    public IndexSpec getIndexSpec() {
         return indexSpec;
     }
 
@@ -174,71 +164,60 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
      */
     @Deprecated
     @JsonProperty
-    public boolean getBuildV9Directly()
-    {
+    public boolean getBuildV9Directly() {
         return true;
     }
 
     @Override
     @JsonProperty
-    public boolean isReportParseExceptions()
-    {
+    public boolean isReportParseExceptions() {
         return reportParseExceptions;
     }
 
     @JsonProperty
-    public long getHandoffConditionTimeout()
-    {
+    public long getHandoffConditionTimeout() {
         return handoffConditionTimeout;
     }
 
     @JsonProperty
-    public boolean isResetOffsetAutomatically()
-    {
+    public boolean isResetOffsetAutomatically() {
         return resetOffsetAutomatically;
     }
 
     @Override
     @JsonProperty
     @Nullable
-    public SegmentWriteOutMediumFactory getSegmentWriteOutMediumFactory()
-    {
+    public SegmentWriteOutMediumFactory getSegmentWriteOutMediumFactory() {
         return segmentWriteOutMediumFactory;
     }
 
     @JsonProperty
-    public Period getIntermediateHandoffPeriod()
-    {
+    public Period getIntermediateHandoffPeriod() {
         return intermediateHandoffPeriod;
     }
 
     @JsonProperty
-    public boolean isLogParseExceptions()
-    {
+    public boolean isLogParseExceptions() {
         return logParseExceptions;
     }
 
     @JsonProperty
-    public int getMaxParseExceptions()
-    {
+    public int getMaxParseExceptions() {
         return maxParseExceptions;
     }
 
     @JsonProperty
-    public int getMaxSavedParseExceptions()
-    {
+    public int getMaxSavedParseExceptions() {
         return maxSavedParseExceptions;
     }
 
     @JsonProperty
-    public boolean isSkipSequenceNumberAvailabilityCheck()
-    {
+    public boolean isSkipSequenceNumberAvailabilityCheck() {
         return skipSequenceNumberAvailabilityCheck;
     }
 
     @Override
-    public boolean equals(Object o)
-    {
+    public boolean equals(Object o) {
         if (this == o) {
             return true;
         }
@@ -266,8 +245,7 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
     }
 
     @Override
-    public int hashCode()
-    {
+    public int hashCode() {
         return Objects.hash(
                 maxRowsInMemory,
                 maxBytesInMemory,
@@ -290,8 +268,7 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
     }
 
     @Override
-    public String toString()
-    {
+    public String toString() {
         return "PubSubIndexTaskTuningConfig{" +
                 "maxRowsInMemory=" + getMaxRowsInMemory() +
                 ", maxRowsPerSegment=" + getMaxRowsPerSegment() +
