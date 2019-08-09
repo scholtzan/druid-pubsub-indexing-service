@@ -243,7 +243,10 @@ public class PubSubIndexTask extends AbstractTask implements ChatHandler {
                 ioConfig.getMaxMessagesPerPoll(),
                 ioConfig.getMaxMessageSizePerPoll(),
                 ioConfig.getKeepAliveTime(),
-                ioConfig.getKeepAliveTimeout()
+                ioConfig.getKeepAliveTimeout(),
+                ioConfig.getMaxQueueSize(),
+                ioConfig.getMaxOutstandingElements(),
+                ioConfig.getMaxOutstandingRequestBytes()
         );
     }
 

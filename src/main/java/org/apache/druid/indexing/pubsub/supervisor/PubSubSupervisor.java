@@ -173,7 +173,6 @@ public class PubSubSupervisor implements Supervisor {
         );
     }
 
-
     protected PubSubMessageSupplier setupMessageSupplier() {
         return new PubSubMessageSupplier(
                 ioConfig.getProjectId(),
@@ -181,7 +180,10 @@ public class PubSubSupervisor implements Supervisor {
                 ioConfig.getMaxMessagesPerPoll(),
                 ioConfig.getMaxMessageSizePerPoll(),
                 ioConfig.getKeepAliveTime(),
-                ioConfig.getKeepAliveTimeout()
+                ioConfig.getKeepAliveTimeout(),
+                ioConfig.getMaxQueueSize(),
+                ioConfig.getMaxOutstandingElements(),
+                ioConfig.getMaxOutstandingRequestBytes()
         );
     }
 
@@ -286,7 +288,10 @@ public class PubSubSupervisor implements Supervisor {
                 ioConfig.getKeepAliveTimeout(),
                 tuningConfig.getMaxRowsPerSegment() == null ? DEFAULT_MAX_ROWS_PER_SEGMENT : tuningConfig.getMaxRowsPerSegment(),
                 tuningConfig.getMaxTotalRows() == null ? DEFAULT_MAX_TOTAL_ROWS : tuningConfig.getMaxTotalRows(),
-                ioConfig.getPollTimeout()
+                ioConfig.getPollTimeout(),
+                ioConfig.getMaxQueueSize(),
+                ioConfig.getMaxOutstandingElements(),
+                ioConfig.getMaxOutstandingRequestBytes()
         );
     }
 

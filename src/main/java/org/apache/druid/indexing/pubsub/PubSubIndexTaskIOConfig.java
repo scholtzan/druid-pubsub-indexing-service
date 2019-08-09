@@ -20,6 +20,9 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
     private final long maxTotalRows;
     private final int pushTimeout;
     private final int taskCheckDuration;
+    private final long maxOutstandingRequestBytes;
+    private final long maxOutstandingElements;
+    private final int maxQueueSize;
 
     @JsonCreator
     public PubSubIndexTaskIOConfig(
@@ -31,7 +34,10 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
             @JsonProperty("keepAliveTimeout") Duration keepAliveTimeout,
             @JsonProperty("maxRowsPerSegment") int maxRowsPerSegment,
             @JsonProperty("maxTotalRows") long maxTotalRows,
-            @JsonProperty("pushTimeout") int pushTimeout
+            @JsonProperty("pushTimeout") int pushTimeout,
+            @JsonProperty("maxQueueSize") int maxQueueSize,
+            @JsonProperty("maxOutstandingElements") long maxOutstandingElements,
+            @JsonProperty("maxOutstandingRequestBytes") long maxOutstandingRequestBytes
     ) {
         this.minimumMessageTime = minimumMessageTime;
         this.maximumMessageTime = maximumMessageTime;
@@ -43,6 +49,9 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
         this.maxTotalRows = maxTotalRows;
         this.maxRowsPerSegment = maxRowsPerSegment;
         this.taskCheckDuration = 60000;
+        this.maxOutstandingElements = maxOutstandingElements;
+        this.maxOutstandingRequestBytes = maxOutstandingRequestBytes;
+        this.maxQueueSize = maxQueueSize;
     }
 
     @JsonProperty
@@ -95,5 +104,17 @@ public class PubSubIndexTaskIOConfig implements IOConfig {
 
     public int getPushTimeout() {
         return pushTimeout;
+    }
+
+    public long getMaxOutstandingRequestBytes() {
+        return maxOutstandingRequestBytes;
+    }
+
+    public long getMaxOutstandingElements() {
+        return maxOutstandingElements;
+    }
+
+    public int getMaxQueueSize() {
+        return maxQueueSize;
     }
 }

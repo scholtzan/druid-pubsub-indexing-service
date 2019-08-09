@@ -30,6 +30,9 @@ public class PubSubSupervisorIOConfig {
     private boolean decompressData;
     private final Optional<DateTime> minimumMessageTime;
     private final Optional<DateTime> maximumMessageTime;
+    private final long maxOutstandingRequestBytes;
+    private final long maxOutstandingElements;
+    private final int maxQueueSize;
 
     @JsonCreator
     public PubSubSupervisorIOConfig(
@@ -52,7 +55,10 @@ public class PubSubSupervisorIOConfig {
             @JsonProperty("keepAliveTimeout") Duration keepAliveTimeout,
             @JsonProperty("decompressData") boolean decompressData,
             @JsonProperty("minimumMessageTime") DateTime minimumMessageTime,
-            @JsonProperty("maximumMessageTime") DateTime maximumMessageTime
+            @JsonProperty("maximumMessageTime") DateTime maximumMessageTime,
+            @JsonProperty("maxQueueSize") int maxQueueSize,
+            @JsonProperty("maxOutstandingElements") long maxOutstandingElements,
+            @JsonProperty("maxOutstandingRequestBytes") long maxOutstandingRequestBytes
     )
     {
         this.pollTimeout = pollTimeout != null ? pollTimeout : DEFAULT_POLL_TIMEOUT_MILLIS;
@@ -78,6 +84,9 @@ public class PubSubSupervisorIOConfig {
         this.decompressData = decompressData;
         this.minimumMessageTime = Optional.fromNullable(minimumMessageTime);
         this.maximumMessageTime = Optional.fromNullable(maximumMessageTime);
+        this.maxOutstandingElements = maxOutstandingElements;
+        this.maxOutstandingRequestBytes = maxOutstandingRequestBytes;
+        this.maxQueueSize = maxQueueSize;
     }
 
     private static org.joda.time.Duration defaultDuration(final Period period, final String theDefault)
@@ -203,5 +212,17 @@ public class PubSubSupervisorIOConfig {
 
     public Duration getKeepAliveTimeout() {
         return keepAliveTimeout;
+    }
+
+    public long getMaxOutstandingRequestBytes() {
+        return maxOutstandingRequestBytes;
+    }
+
+    public long getMaxOutstandingElements() {
+        return maxOutstandingElements;
+    }
+
+    public int getMaxQueueSize() {
+        return maxQueueSize;
     }
 }
