@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JacksonInject;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.api.client.repackaged.com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.*;
 import org.apache.druid.data.input.InputRow;
 import org.apache.druid.indexer.TaskStatus;
@@ -80,6 +79,9 @@ public class PubSubIndexTask extends AbstractTask implements ChatHandler {
                 context
         );
 
+        log.info("New PubSubIndexTask");
+        log.info("Dataschema: " + dataSchema);
+
         this.projectId = projectId;
         this.subscriptionId = subscriptionId;
         this.decompressData = decompressData;
@@ -113,6 +115,7 @@ public class PubSubIndexTask extends AbstractTask implements ChatHandler {
 
     @Override
     public TaskStatus run(final TaskToolbox toolbox) {
+        log.info("RUN!!");
         return getRunner().run(toolbox);
     }
 
@@ -248,7 +251,6 @@ public class PubSubIndexTask extends AbstractTask implements ChatHandler {
         return runner.getAppenderator();
     }
 
-    @VisibleForTesting
     public PubSubIndexTaskRunner getRunner() {
         return runnerSupplier.get();
     }

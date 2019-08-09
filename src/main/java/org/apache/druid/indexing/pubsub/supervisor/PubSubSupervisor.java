@@ -30,7 +30,6 @@ import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.metadata.EntryExistsException;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
-import org.joda.time.Period;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -204,6 +203,10 @@ public class PubSubSupervisor implements Supervisor {
     }
 
     public void run() {
+        log.info("Run Pub/Sub supervisor");
+        log.info("Datasource: " + this.dataSource);
+        log.info("Spec: " + spec);
+
         try {
             if (spec.isSuspended()) {
                 log.info(
@@ -288,6 +291,7 @@ public class PubSubSupervisor implements Supervisor {
     }
 
     private void runInternal() {
+        log.info("Run internal");
         synchronized (taskLock) {
             List<Interval> intervalsToRemove = new ArrayList<>();
             for (Map.Entry<Interval, PubSubIndexTask> entry : runningTasks.entrySet()) {
@@ -305,6 +309,8 @@ public class PubSubSupervisor implements Supervisor {
                 //if the number of running tasks reach the max task count, supervisor won't submit new tasks.
                 return;
             }
+
+            log.info("create task");
 
             PubSubIndexTask indexTask = createTask();
 
@@ -324,6 +330,8 @@ public class PubSubSupervisor implements Supervisor {
 
     private PubSubIndexTask createTask() {
         String taskId = Joiner.on("_").join("pubsub_index", RandomIdUtils.getRandomId());
+
+        log.info("Create new PubSubIndexTask: " + taskId);
 
         return new PubSubIndexTask(
                 taskId,

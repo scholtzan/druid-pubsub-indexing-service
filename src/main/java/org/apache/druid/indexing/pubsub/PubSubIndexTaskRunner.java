@@ -91,6 +91,7 @@ public class PubSubIndexTaskRunner {
             CircularBuffer<Throwable> savedParseExceptions,
             RowIngestionMetersFactory rowIngestionMetersFactory
     ) {
+        log.info("Init PubSubIndexTaskRunner");
         Preconditions.checkNotNull(task);
         this.task = task;
         this.ioConfig = task.getIOConfig();
@@ -100,6 +101,7 @@ public class PubSubIndexTaskRunner {
         this.savedParseExceptions = savedParseExceptions;
         this.rowIngestionMeters = rowIngestionMetersFactory.createRowIngestionMeters();
         this.ingestionState = IngestionState.NOT_STARTED;
+        log.info(this.toString());
     }
 
     @Nonnull
@@ -110,6 +112,7 @@ public class PubSubIndexTaskRunner {
     }
 
     public TaskStatus run(TaskToolbox toolbox) {
+        log.info("Run PubSubIndexTaskRunner");
         try {
             return runInternal(toolbox);
         } catch (Exception e) {
@@ -139,6 +142,8 @@ public class PubSubIndexTaskRunner {
         final LookupNodeService lookupNodeService = lookupTier == null ?
                 toolbox.getLookupNodeService() :
                 new LookupNodeService(lookupTier);
+
+        log.info("Get node");
 
         final DiscoveryDruidNode discoveryDruidNode = new DiscoveryDruidNode(
                 toolbox.getDruidNode(),

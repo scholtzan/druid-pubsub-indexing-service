@@ -15,8 +15,11 @@ import org.apache.druid.indexing.overlord.supervisor.Supervisor;
 import org.apache.druid.indexing.overlord.supervisor.SupervisorSpec;
 import org.apache.druid.indexing.pubsub.PubSubIndexTaskClientFactory;
 import org.apache.druid.indexing.pubsub.PubSubIndexTaskIOConfig;
+import org.apache.druid.indexing.pubsub.PubSubIndexTaskRunner;
+import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.java.util.emitter.service.ServiceEmitter;
 import org.apache.druid.segment.indexing.DataSchema;
+import org.apache.druid.segment.transform.TransformSpec;
 import org.apache.druid.server.metrics.DruidMonitorSchedulerConfig;
 
 import javax.annotation.Nullable;
@@ -25,6 +28,8 @@ import java.util.Map;
 
 
 public class PubSubSupervisorSpec implements SupervisorSpec {
+    private static final EmittingLogger log = new EmittingLogger(PubSubSupervisorSpec.class);
+
     protected final TaskStorage taskStorage;
     protected final TaskMaster taskMaster;
     protected final IndexerMetadataStorageCoordinator indexerMetadataStorageCoordinator;
@@ -56,7 +61,11 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
             @JacksonInject DruidMonitorSchedulerConfig monitorSchedulerConfig,
             @JacksonInject RowIngestionMetersFactory rowIngestionMetersFactory
     ) {
+        log.info("Dataschema:" + dataSchema);
+        log.info("IOconfig: " + ioConfig);
+        log.info("tuning: " + tuningConfig);
         this.dataSchema = Preconditions.checkNotNull(dataSchema, "dataSchema");
+
         this.tuningConfig = tuningConfig; // null check done in concrete class
         this.ioConfig = Preconditions.checkNotNull(ioConfig, "ioConfig");
         this.context = context;
@@ -74,6 +83,7 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
 
     @Override
     public Supervisor createSupervisor() {
+        log.info("createSupervisor()");
         return new PubSubSupervisor(
                 getId(),
                 taskStorage,
