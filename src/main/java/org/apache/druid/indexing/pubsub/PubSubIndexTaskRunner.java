@@ -22,8 +22,12 @@ import org.apache.druid.indexing.common.task.RealtimeIndexTask;
 import org.apache.druid.java.util.common.DateTimes;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.emitter.EmittingLogger;
+import org.apache.druid.segment.indexing.RealtimeIOConfig;
+import org.apache.druid.segment.realtime.FireDepartment;
+import org.apache.druid.segment.realtime.FireDepartmentMetrics;
 import org.apache.druid.segment.realtime.appenderator.*;
 import org.apache.druid.server.security.AuthorizerMapper;
+
 import org.apache.druid.utils.CircularBuffer;
 import org.joda.time.DateTime;
 
@@ -76,7 +80,7 @@ public class PubSubIndexTaskRunner {
     private volatile Status status = Status.NOT_STARTED; // this is only ever set by the task runner thread (runThread)
     private volatile TaskToolbox toolbox;
     private volatile Thread runThread;
-    private volatile Appenderator appenderator;
+    private volatile Appenderator appenderator; // todo: is null -> error
     private volatile BatchAppenderatorDriver driver;
     private volatile IngestionState ingestionState;
     private volatile Throwable backgroundThreadException;
@@ -134,6 +138,13 @@ public class PubSubIndexTaskRunner {
         startTime = DateTimes.nowUtc();
         status = Status.STARTING;
 
+        final FireDepartment fireDepartmentForMetrics = new FireDepartment(
+                task.getDataSchema(),
+                new RealtimeIOConfig(null, null),
+                null
+        );
+        FireDepartmentMetrics fireDepartmentMetrics = fireDepartmentForMetrics.getMetrics();
+
         setToolbox(toolbox);
 
         runThread = Thread.currentThread();
@@ -160,6 +171,7 @@ public class PubSubIndexTaskRunner {
         toolbox.getDruidNodeAnnouncer().announce(discoveryDruidNode);
 
         SegmentAllocator segmentAllocator = task.createSegmentAllocator(toolbox);
+        appenderator = task.newAppenderator(fireDepartmentMetrics, toolbox, task.getDataSchema(), tuningConfig);
         driver = task.newDriver(appenderator, toolbox, segmentAllocator);
 
         // Start up, set up initial sequences.

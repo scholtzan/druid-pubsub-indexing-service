@@ -15,6 +15,7 @@ import org.apache.druid.indexing.common.actions.SurrogateAction;
 import org.apache.druid.indexing.common.actions.TaskActionClient;
 import org.apache.druid.indexing.common.stats.RowIngestionMetersFactory;
 import org.apache.druid.indexing.common.task.AbstractTask;
+import org.apache.druid.indexing.common.task.IndexTask;
 import org.apache.druid.indexing.common.task.TaskResource;
 import org.apache.druid.indexing.common.task.Tasks;
 import org.apache.druid.indexing.seekablestream.utils.RandomIdUtils;
@@ -23,7 +24,9 @@ import org.apache.druid.java.util.common.StringUtils;
 import org.apache.druid.java.util.common.parsers.ParseException;
 import org.apache.druid.java.util.emitter.EmittingLogger;
 import org.apache.druid.segment.indexing.DataSchema;
+import org.apache.druid.segment.realtime.FireDepartmentMetrics;
 import org.apache.druid.segment.realtime.appenderator.Appenderator;
+import org.apache.druid.segment.realtime.appenderator.Appenderators;
 import org.apache.druid.segment.realtime.appenderator.BatchAppenderatorDriver;
 import org.apache.druid.segment.realtime.appenderator.SegmentAllocator;
 import org.apache.druid.segment.realtime.firehose.ChatHandler;
@@ -244,6 +247,24 @@ public class PubSubIndexTask extends AbstractTask implements ChatHandler {
                 ioConfig.getMaxMessageSizePerPoll(),
                 ioConfig.getKeepAliveTime(),
                 ioConfig.getKeepAliveTimeout()
+        );
+    }
+
+    public Appenderator newAppenderator(
+            FireDepartmentMetrics metrics,
+            TaskToolbox toolbox,
+            DataSchema dataSchema,
+            PubSubIndexTaskTuningConfig tuningConfig
+    )
+    {
+        return Appenderators.createOffline(
+                dataSchema,
+                tuningConfig.withBasePersistDirectory(toolbox.getPersistDir()),
+                metrics,
+                toolbox.getSegmentPusher(),
+                toolbox.getObjectMapper(),
+                toolbox.getIndexIO(),
+                toolbox.getIndexMergerV9()
         );
     }
 

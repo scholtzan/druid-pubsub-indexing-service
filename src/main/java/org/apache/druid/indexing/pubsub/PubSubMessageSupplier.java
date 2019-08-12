@@ -4,7 +4,6 @@ package org.apache.druid.indexing.pubsub;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
-import org.apache.druid.indexing.seekablestream.common.StreamException;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.EmittingLogger;
@@ -134,21 +133,6 @@ public class PubSubMessageSupplier {
         if (closed) {
             throw new ISE("Invalid operation - PubSubMessageSupplier has already been closed");
         }
-    }
-
-    private static <T> T wrapExceptions(Callable<T> callable) {
-        try {
-            return callable.call();
-        } catch (Exception e) {
-            throw new StreamException(e);
-        }
-    }
-
-    private static void wrapExceptions(Runnable runnable) {
-        wrapExceptions(() -> {
-            runnable.run();
-            return null;
-        });
     }
 
     private class ReceivedMessages {

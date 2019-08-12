@@ -63,6 +63,7 @@ public class PubSubSupervisorTuningConfig extends PubSubIndexTaskTuningConfig {
                 basePersistDirectory,
                 maxPendingPersists,
                 indexSpec,
+                indexSpecForIntermediatePersists,
                 handoffConditionTimeout,
                 resetOffsetAutomatically,
                 segmentWriteOutMediumFactory,

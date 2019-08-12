@@ -13,6 +13,7 @@ import org.apache.druid.indexing.overlord.TaskMaster;
 import org.apache.druid.indexing.overlord.TaskStorage;
 import org.apache.druid.indexing.overlord.supervisor.Supervisor;
 import org.apache.druid.indexing.overlord.supervisor.SupervisorSpec;
+import org.apache.druid.indexing.overlord.supervisor.SupervisorStateManagerConfig;
 import org.apache.druid.indexing.pubsub.PubSubIndexTaskClientFactory;
 import org.apache.druid.indexing.pubsub.PubSubIndexTaskIOConfig;
 import org.apache.druid.indexing.pubsub.PubSubIndexTaskRunner;
@@ -44,6 +45,7 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
     protected final ServiceEmitter emitter;
     protected final DruidMonitorSchedulerConfig monitorSchedulerConfig;
     private final boolean suspended;
+    private final SupervisorStateManagerConfig supervisorStateManagerConfig;
 
     @JsonCreator
     public PubSubSupervisorSpec(
@@ -59,7 +61,8 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
             @JacksonInject @Json ObjectMapper mapper,
             @JacksonInject ServiceEmitter emitter,
             @JacksonInject DruidMonitorSchedulerConfig monitorSchedulerConfig,
-            @JacksonInject RowIngestionMetersFactory rowIngestionMetersFactory
+            @JacksonInject RowIngestionMetersFactory rowIngestionMetersFactory,
+            @JacksonInject SupervisorStateManagerConfig supervisorStateManagerConfig
     ) {
         log.info("Dataschema:" + dataSchema);
         log.info("IOconfig: " + ioConfig);
@@ -79,6 +82,7 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
         this.monitorSchedulerConfig = monitorSchedulerConfig;
         this.rowIngestionMetersFactory = rowIngestionMetersFactory;
         this.suspended = suspended != null ? suspended : false;
+        this.supervisorStateManagerConfig = supervisorStateManagerConfig;
     }
 
     @Override
@@ -134,6 +138,11 @@ public class PubSubSupervisorSpec implements SupervisorSpec {
     @Override
     public String getId() {
         return dataSchema.getDataSource();
+    }
+
+    public SupervisorStateManagerConfig getSupervisorStateManagerConfig()
+    {
+        return supervisorStateManagerConfig;
     }
 
     @Override

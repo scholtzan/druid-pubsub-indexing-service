@@ -45,7 +45,7 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
     private final boolean logParseExceptions;
     private final int maxParseExceptions;
     private final int maxSavedParseExceptions;
-
+    private final IndexSpec indexSpecForIntermediatePersists;
 
     @JsonCreator
     public PubSubIndexTaskTuningConfig(
@@ -57,6 +57,7 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
             @JsonProperty("basePersistDirectory") @Nullable File basePersistDirectory,
             @JsonProperty("maxPendingPersists") @Nullable Integer maxPendingPersists,
             @JsonProperty("indexSpec") @Nullable IndexSpec indexSpec,
+            @JsonProperty("indexSpecForIntermediatePersists") @Nullable IndexSpec indexSpecForIntermediatePersists,
             @JsonProperty("handoffConditionTimeout") @Nullable Long handoffConditionTimeout,
             @JsonProperty("resetOffsetAutomatically") @Nullable Boolean resetOffsetAutomatically,
             @JsonProperty("segmentWriteOutMediumFactory") @Nullable SegmentWriteOutMediumFactory segmentWriteOutMediumFactory,
@@ -93,6 +94,8 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
                 ? new Period().withDays(Integer.MAX_VALUE)
                 : intermediateHandoffPeriod;
         this.skipSequenceNumberAvailabilityCheck = DEFAULT_SKIP_SEQUENCE_NUMBER_AVAILABILITY_CHECK;
+        this.indexSpecForIntermediatePersists = indexSpecForIntermediatePersists == null ?
+                this.indexSpec : indexSpecForIntermediatePersists;
 
         if (this.reportParseExceptions) {
             this.maxParseExceptions = 0;
@@ -109,6 +112,29 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
                 ? TuningConfig.DEFAULT_LOG_PARSE_EXCEPTIONS
                 : logParseExceptions;
     }
+
+    public PubSubIndexTaskTuningConfig withBasePersistDirectory(File dir)
+    {
+        return new PubSubIndexTaskTuningConfig(
+                getMaxRowsInMemory(),
+                getMaxBytesInMemory(),
+                getMaxRowsPerSegment(),
+                getMaxTotalRows(),
+                getIntermediatePersistPeriod(),
+                dir,
+                getMaxPendingPersists(),
+                getIndexSpec(),
+                getIndexSpecForIntermediatePersists(),
+                getHandoffConditionTimeout(),
+                isResetOffsetAutomatically(),
+                getSegmentWriteOutMediumFactory(),
+                getIntermediateHandoffPeriod(),
+                isLogParseExceptions(),
+                getMaxParseExceptions(),
+                getMaxSavedParseExceptions()
+        );
+    }
+
 
     @Override
     @JsonProperty
@@ -145,6 +171,7 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
     public File getBasePersistDirectory() {
         return basePersistDirectory;
     }
+
 
     @Override
     @JsonProperty
@@ -195,6 +222,14 @@ public class PubSubIndexTaskTuningConfig implements TuningConfig, AppenderatorCo
     public Period getIntermediateHandoffPeriod() {
         return intermediateHandoffPeriod;
     }
+
+    @JsonProperty
+    @Override
+    public IndexSpec getIndexSpecForIntermediatePersists()
+    {
+        return indexSpecForIntermediatePersists;
+    }
+
 
     @JsonProperty
     public boolean isLogParseExceptions() {

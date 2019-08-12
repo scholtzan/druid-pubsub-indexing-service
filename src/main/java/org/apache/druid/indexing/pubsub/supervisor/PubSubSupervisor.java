@@ -19,6 +19,7 @@ import org.apache.druid.indexing.common.task.TaskResource;
 import org.apache.druid.indexing.overlord.*;
 import org.apache.druid.indexing.overlord.supervisor.Supervisor;
 import org.apache.druid.indexing.overlord.supervisor.SupervisorReport;
+import org.apache.druid.indexing.overlord.supervisor.SupervisorStateManager;
 import org.apache.druid.indexing.pubsub.*;
 import org.apache.druid.indexing.seekablestream.utils.RandomIdUtils;
 import org.apache.druid.java.util.common.DateTimes;
@@ -79,6 +80,7 @@ public class PubSubSupervisor implements Supervisor {
     private final Map<Interval, PubSubIndexTask> runningTasks = new HashMap<>();
     private final Map<Interval, String> runningVersion = new HashMap<>();
     private final int maxTaskCount;
+    private final SupervisorStateManager stateManager;
 
     private boolean listenerRegistered = false;
     private long lastRunTime;
@@ -118,6 +120,7 @@ public class PubSubSupervisor implements Supervisor {
                 ? Integer.parseInt(String.valueOf(spec.getContext().get("maxTaskCount")))
                 : DEFAULT_MAX_TASK_COUNT;
         log.info("Pub/Sub supervisor initialized-3");
+        this.stateManager = new SupervisorStateManager(spec.getSupervisorStateManagerConfig(), spec.isSuspended());
 
         this.taskConfig = createTaskIOConfig();
 
@@ -275,6 +278,13 @@ public class PubSubSupervisor implements Supervisor {
     ) {
         // do nothing
     }
+
+    @Override
+    public SupervisorStateManager.State getState()
+    {
+        return stateManager.getSupervisorState();
+    }
+
 
     private PubSubIndexTaskIOConfig createTaskIOConfig() {
         return new PubSubIndexTaskIOConfig(
