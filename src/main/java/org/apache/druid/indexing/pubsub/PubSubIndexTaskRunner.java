@@ -205,11 +205,11 @@ public class PubSubIndexTaskRunner {
                             message.getAttributes()
                     );
 
-                    String decompressedData = new String(message.getData().toByteArray());
+                    String decompressedData = message.getData();
                     ObjectMapper mapper = new ObjectMapper();
 
                     if (task.getDecompressData()) {
-                        GZIPInputStream inputStream = new GZIPInputStream(new ByteArrayInputStream(message.getData().toByteArray()));
+                        GZIPInputStream inputStream = new GZIPInputStream(new ByteArrayInputStream(message.getData().getBytes()));
                         decompressedData = IOUtils.toString(inputStream);
                     }
 

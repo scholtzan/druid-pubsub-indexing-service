@@ -44,7 +44,12 @@
         <dependency>
             <groupId>com.google.cloud</groupId>
             <artifactId>google-cloud-pubsub</artifactId>
-            <version>1.49.0</version>
+            <version>1.86.0</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.auth</groupId>
+            <artifactId>google-auth-library-oauth2-http</artifactId>
+            <version>0.16.2</version>
         </dependency>
         <dependency>
             <groupId>org.threeten</groupId>

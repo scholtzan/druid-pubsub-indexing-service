@@ -1,30 +1,37 @@
 package org.apache.druid.indexing.pubsub;
 
-import com.google.cloud.pubsub.v1.AckReplyConsumer;
-import com.google.cloud.pubsub.v1.MessageReceiver;
-import com.google.cloud.pubsub.v1.Subscriber;
-import com.google.cloud.pubsub.v1.stub.GrpcSubscriberStub;
-import com.google.cloud.pubsub.v1.stub.SubscriberStub;
-import com.google.cloud.pubsub.v1.stub.SubscriberStubSettings;
-import com.google.pubsub.v1.*;
+
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import org.apache.druid.indexing.seekablestream.common.StreamException;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.java.util.emitter.EmittingLogger;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.HttpClients;
+import org.jcodings.util.Hash;
 import org.threeten.bp.Duration;
 
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 public class PubSubMessageSupplier {
-    private final SubscriberStub subscriber;
     private final String projectId;
     private final String subscriptionId;
     private final int maxMessageSizePerPoll;
     private final int maxMessagesPerPoll;
     private final Duration keepAliveTime;
     private final Duration keepAliveTimeout;
+    private final String subscription;
+    private final CredentialsProvider credentials;
 
     private boolean closed;
 
@@ -40,11 +47,12 @@ public class PubSubMessageSupplier {
         log.info("Init PubSubMessageSupplier");
         this.projectId = projectId;
         this.subscriptionId = subscriptionId;
-        this.subscriber = getPubSubSubscriber();
         this.maxMessageSizePerPoll = maxMessageSizePerPoll;
         this.maxMessagesPerPoll = maxMessagesPerPoll;
         this.keepAliveTime = keepAliveTime;
         this.keepAliveTimeout = keepAliveTimeout;
+        this.subscription = "projects/" + projectId  + "/subscriptions/" + subscriptionId;
+        this.credentials = new CredentialsProvider();
     }
 
     public void close() {
@@ -54,89 +62,70 @@ public class PubSubMessageSupplier {
         closed = true;
     }
 
-    private SubscriberStub getPubSubSubscriber() {
-        log.info("Init SubscriberStub");
-        ProjectSubscriptionName subscriptionName = ProjectSubscriptionName.of(projectId, subscriptionId);
-
-        MessageReceiver receiver =
-            new MessageReceiver() {
-                @Override
-                public void receiveMessage(PubsubMessage message, AckReplyConsumer consumer) {
-                    // handle incoming message, then ack/nack the received message
-                    System.out.println("Id : " + message.getMessageId());
-                    System.out.println("Data : " + message.getData().toStringUtf8());
-                }
-            };
-
-        Subscriber subscriber = null;
-        try {
-            // Create a subscriber for "my-subscription-id" bound to the message receiver
-            subscriber = Subscriber.newBuilder(subscriptionName, receiver).build();
-            subscriber.startAsync();
-            // ...
-        } finally {
-            // stop receiving messages
-            if (subscriber != null) {
-                subscriber.stopAsync();
-            }
-        }
-
-
-
-        try {
-            SubscriberStubSettings subscriberStubSettings =
-                    SubscriberStubSettings.newBuilder()
-                            .setTransportChannelProvider(
-                                    SubscriberStubSettings.defaultGrpcTransportProviderBuilder()
-                                            .setMaxInboundMessageSize(maxMessageSizePerPoll)
-                                            .setKeepAliveTimeout(keepAliveTimeout)
-                                            .setKeepAliveTime(keepAliveTime)
-                                            .build())
-                            .build();
-
-            return GrpcSubscriberStub.create(subscriberStubSettings);
-        } catch (Exception e) {
-            log.error("Could not initialize PubSub subscriber stub.");
-            return null;
-        }
-    }
-
     public List<PubSubReceivedMessage> poll() {
         checkIfClosed();
 
         log.info("poll");
 
-        String subscriptionName = ProjectSubscriptionName.format(this.projectId, this.subscriptionId);
-
-        PullRequest pullRequest =
-                PullRequest.newBuilder()
-                        .setMaxMessages(maxMessagesPerPoll)
-                        .setReturnImmediately(false)
-                        .setSubscription(subscriptionName)
-                        .build();
-
-
-        PullResponse pullResponse = subscriber.pullCallable().call(pullRequest);
-
-        List<String> ackIds = new ArrayList<>();
+        HttpClient httpclient = HttpClients.createDefault();
+        String url = "https://pubsub.googleapis.com/v1/" + subscription + ":pull";
+        HttpPost request = new HttpPost(url);
+        ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
         List<PubSubReceivedMessage> messages = new ArrayList<>();
 
-        for (ReceivedMessage message : pullResponse.getReceivedMessagesList()) {
-            log.info("Received message: " + message.getMessage().getAttributesMap());
-            messages.add(new PubSubReceivedMessage(message.getMessage().getData(), message.getMessage().getAttributesMap()));
-            ackIds.add(message.getAckId());
+        try {
+            request.addHeader("Authorization", "Bearer " + credentials.getAccessToken());
+            try {
+                log.info("Pull pub sub messages");
+                // create event JSON payload
+                Map<String, Object> payload = new HashMap<String, Object>();
+                payload.put("returnImmediately", true);
+                payload.put("maxMessages", maxMessagesPerPoll);
+
+                String jsonPayload = ow.writeValueAsString(payload);
+                request.setEntity(new StringEntity(jsonPayload));
+                request.addHeader("Content-type", "application/json");
+
+                try {
+                    // get pulled messages
+                    HttpResponse response = httpclient.execute(request);
+                    ObjectMapper om = new ObjectMapper();
+                    ReceivedMessages receivedMessages = om.readValue(response.getEntity().getContent(), ReceivedMessages.class);
+                    messages = receivedMessages.getReceivedPubSubMessages();
+
+                    log.info("Received messages: " + messages);
+
+                    String ackUrl = "https://pubsub.googleapis.com/v1/" + subscription + ":acknowledge";
+                    HttpPost ackRequest = new HttpPost(ackUrl);
+                    Map<String, Object> ackPayload = new HashMap<String, Object>();
+
+                    List<String> ackIds = new ArrayList<>();
+                    for (PubSubReceivedMessage message: messages) {
+                        ackIds.add(message.getAckId());
+                    }
+
+                    log.info("Ack messages");
+                    ackPayload.put("ackId", ackIds);
+
+                    ackRequest.setEntity(new StringEntity(ow.writeValueAsString(ackPayload)));
+                    ackRequest.addHeader("Content-type", "application/json");
+
+                    try {
+                        httpclient.execute(request);
+                    } catch (Exception e) {
+                        log.error("Error acknowledging messages: " + e);
+                    }
+                } catch (IOException ex) {
+                    log.error(ex, "Failed to get events from Pub/Sub.");
+                } finally {
+                    request.releaseConnection();
+                }
+            } catch (Exception e) {
+                log.error("Could not serialize payload: " + e.toString());
+            }
+        } catch (Exception e) {
+            log.error("Error getting access token: " + e.toString());
         }
-
-        // acknowledge received messages
-        AcknowledgeRequest acknowledgeRequest =
-                AcknowledgeRequest.newBuilder()
-                        .setSubscription(subscriptionName)
-                        .addAllAckIds(ackIds)
-                        .build();
-
-        log.info("Ack messages");
-
-        subscriber.acknowledgeCallable().call(acknowledgeRequest);
 
         return messages;
     }
@@ -160,5 +149,42 @@ public class PubSubMessageSupplier {
             runnable.run();
             return null;
         });
+    }
+
+    private class ReceivedMessages {
+        @JsonProperty("receivedMessages") private final List<ReceivedMessage> receivedMessages;
+
+        public ReceivedMessages(List<ReceivedMessage> receivedMessages) {
+            this.receivedMessages = receivedMessages;
+        }
+
+        public List<PubSubReceivedMessage> getReceivedPubSubMessages() {
+            List<PubSubReceivedMessage> messages = new ArrayList<>();
+
+            for (ReceivedMessage message: receivedMessages) {
+                messages.add(message.getMessage());
+            }
+
+            return messages;
+        }
+    }
+
+    private class ReceivedMessage {
+        @JsonProperty("ackId") private final String ackId;
+        @JsonProperty("message") private final PubSubReceivedMessage message;
+
+        public ReceivedMessage(String ackId, PubSubReceivedMessage message) {
+            this.ackId = ackId;
+            this.message = message;
+            message.setAckId(ackId);
+        }
+
+        public PubSubReceivedMessage getMessage() {
+            if (message.getAckId() == null) {
+                message.setAckId(ackId);
+            }
+
+            return message;
+        }
     }
 }
