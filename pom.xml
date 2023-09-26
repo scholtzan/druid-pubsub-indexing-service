@@ -54,7 +54,7 @@
         <dependency>
             <groupId>org.apache.druid</groupId>
             <artifactId>druid-core</artifactId>
-            <version>0.16.0-incubating-SNAPSHOT</version>
+            <version>0.22.0</version>
             <scope>provided</scope>
         </dependency>
         <dependency>
